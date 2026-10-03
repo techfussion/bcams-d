@@ -1,0 +1,146 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    font-family: 'Poppins', 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  /* Focus ring utility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+}
+
+@layer components {
+  /* Card component */
+  .bcams-card {
+    @apply bg-card rounded-lg border border-border shadow-card;
+  }
+
+  .bcams-card-hover {
+    @apply bcams-card transition-shadow duration-200 hover:shadow-card-hover;
+  }
+
+  /* Page layout */
+  .bcams-page {
+    @apply p-page space-y-section;
+  }
+
+  .bcams-page-header {
+    @apply flex items-center justify-between;
+  }
+
+  /* Status badges */
+  .bcams-badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-status font-medium;
+  }
+
+  .bcams-badge-success {
+    @apply bcams-badge bg-success-50 text-success-700;
+  }
+
+  .bcams-badge-destructive {
+    @apply bcams-badge bg-destructive-50 text-destructive-700;
+  }
+
+  .bcams-badge-warning {
+    @apply bcams-badge bg-warning-50 text-warning-700;
+  }
+
+  .bcams-badge-muted {
+    @apply bcams-badge bg-muted text-muted-foreground;
+  }
+
+  .bcams-badge-primary {
+    @apply bcams-badge bg-primary-50 text-primary-700;
+  }
+
+  /* Scanner states */
+  .bcams-scanner-ready {
+    @apply border-2 border-primary bg-primary-50/30;
+  }
+
+  .bcams-scanner-processing {
+    @apply border-2 border-primary/50 bg-primary-50/20;
+  }
+
+  .bcams-scanner-success {
+    @apply border-2 border-success bg-success-50/30;
+  }
+
+  .bcams-scanner-error {
+    @apply border-2 border-destructive bg-destructive-50/30;
+  }
+
+  .bcams-scanner-disconnected {
+    @apply border-2 border-muted bg-muted/30;
+  }
+
+  /* Table */
+  .bcams-table {
+    @apply w-full text-table;
+  }
+
+  .bcams-table th {
+    @apply text-left text-label text-muted-foreground font-medium px-4 py-3 border-b border-border;
+  }
+
+  .bcams-table td {
+    @apply px-4 py-3 border-b border-border;
+  }
+
+  .bcams-table tbody tr {
+    @apply transition-colors hover:bg-muted/50;
+  }
+}
+
+@layer utilities {
+  /* Skeleton loading */
+  .skeleton {
+    @apply animate-pulse rounded-md bg-muted;
+  }
+}
