@@ -1,23 +1,28 @@
 /**
- * Login & Role Authentication Page
+ * BCAMS Login Page
  * 
- * Secure desktop access portal supporting:
- * - Direct credential authentication
- * - Hardware Biometric Login
- * - Quick Role Switcher for instant role preview & evaluation
- * - Offline cached credential verification
+ * Institutional authentication portal with:
+ * - Quick role selection cards for development evaluation
+ * - Credential-based sign-in form
+ * - Biometric hardware authentication option
+ * 
+ * Design: Uses the same light, professional design language as
+ * the operational dashboard — white surfaces, green primary accents,
+ * card-based layout.
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/auth-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ConnectionIndicator } from '@/components/common/status-indicators';
+import { cn } from '@/lib/utils';
 import type { UserRole } from '@/types';
 import {
-  Fingerprint, ShieldCheck, UserCheck, KeyRound, Lock,
-  GraduationCap, Users, Building2, CheckCircle2, ArrowRight
+  Fingerprint, ShieldCheck, KeyRound, Lock, Eye, EyeOff,
+  GraduationCap, Users, Building2, ArrowRight, Wifi,
+  CheckCircle2, Monitor, Loader2,
 } from 'lucide-react';
 
 interface RoleProfile {
@@ -26,7 +31,10 @@ interface RoleProfile {
   name: string;
   title: string;
   badge: string;
+  description: string;
   icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
 }
 
 const roleProfiles: RoleProfile[] = [
@@ -34,236 +42,305 @@ const roleProfiles: RoleProfile[] = [
     role: 'super_admin',
     userId: 'user-sa',
     name: 'Dr. Adebayo Ogundimu',
-    title: 'Director of Academic Affairs (Super Admin)',
-    badge: 'Full Institutional Authority',
-    icon: <ShieldCheck className="h-5 w-5 text-purple-600" />,
+    title: 'Director of Academic Affairs',
+    badge: 'Super Admin',
+    description: 'Full system access — devices, policies, audit, and all departments',
+    icon: <ShieldCheck className="h-5 w-5" />,
+    iconBg: 'bg-purple-50',
+    iconColor: 'text-purple-600',
   },
   {
     role: 'hod',
     userId: 'user-hod',
     name: 'Prof. Chidinma Okafor',
-    title: 'Head of Department (Computer Science)',
-    badge: 'Dept Scoped & Enrollment Rights',
-    icon: <Building2 className="h-5 w-5 text-blue-600" />,
+    title: 'Head of Department — Computer Science',
+    badge: 'HOD',
+    description: 'Department-scoped management with enrollment and policy rights',
+    icon: <Building2 className="h-5 w-5" />,
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
   },
   {
     role: 'lecturer',
     userId: 'user-lec',
     name: 'Dr. Emeka Nwosu',
-    title: 'Senior Lecturer (CSC 201 & CSC 301)',
-    badge: 'Session Authorize & Capture',
-    icon: <Users className="h-5 w-5 text-emerald-600" />,
+    title: 'Senior Lecturer — CSC 201 & CSC 301',
+    badge: 'Lecturer',
+    description: 'Session authorization, attendance capture, and course reports',
+    icon: <Users className="h-5 w-5" />,
+    iconBg: 'bg-emerald-50',
+    iconColor: 'text-emerald-600',
   },
   {
     role: 'class_rep',
     userId: 'user-cr',
     name: 'Amina Ibrahim',
-    title: 'Class Representative (CSC 201)',
-    badge: 'Delegated Capture Only',
-    icon: <GraduationCap className="h-5 w-5 text-amber-600" />,
+    title: 'Class Representative — CSC 201',
+    badge: 'Class Rep',
+    description: 'Delegated attendance capture for assigned course sessions',
+    icon: <GraduationCap className="h-5 w-5" />,
+    iconBg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
   },
 ];
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
-  const [email, setEmail] = useState('adebayo.ogundimu@institution.edu.ng');
-  const [password, setPassword] = useState('••••••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedRoleUserId, setSelectedRoleUserId] = useState<string>('user-sa');
+  const [loadingRole, setLoadingRole] = useState<string | null>(null);
 
   const handleRoleSelect = async (userId: string) => {
-    setSelectedRoleUserId(userId);
+    setLoadingRole(userId);
     setIsSubmitting(true);
     await login(userId);
     setIsSubmitting(false);
+    setLoadingRole(null);
     navigate('/');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    await login(selectedRoleUserId);
+    // Default to super admin on form submit
+    await login('user-sa');
     setIsSubmitting(false);
     navigate('/');
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col justify-between relative overflow-hidden select-none">
-      {/* Background aesthetic glow */}
-      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
-
-      {/* Top Bar */}
-      <header className="px-8 py-5 flex items-center justify-between border-b border-slate-800/80 backdrop-blur-sm z-10">
+    <div className="min-h-screen w-full bg-[#FAFBFC] flex flex-col select-none">
+      {/* Header bar — matching app shell style */}
+      <header className="flex items-center justify-between h-14 px-6 bg-white border-b border-border flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
-            <Fingerprint className="h-5 w-5 text-white" />
+          <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary flex items-center justify-center shadow-sm">
+            <Fingerprint className="h-[18px] w-[18px] text-white" />
           </div>
           <div>
-            <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            <h1 className="text-sm font-semibold tracking-tight text-foreground flex items-center gap-2">
               BCAMS Desktop
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/20 text-primary-300 border border-primary/30">
-                v1.0.0
-              </span>
             </h1>
-            <p className="text-[11px] text-slate-400">
-              Biometric Class Attendance Management System
-            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <ConnectionIndicator status="online" />
-          <Badge variant="outline" className="border-slate-800 text-slate-400 text-xs">
-            Hardware Enclave Ready
-          </Badge>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+            <span>Server Online</span>
+          </div>
+          <div className="h-4 w-px bg-border" />
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Monitor className="h-3 w-3" />
+            <span>Station DESK-CS-01</span>
+          </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex items-center justify-center p-6 z-10">
-        <div className="w-full max-w-4xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          {/* Left Column: Quick Role Launcher */}
-          <div className="lg:col-span-7 space-y-4">
-            <div>
-              <span className="text-xs font-semibold text-primary-400 uppercase tracking-wider">
-                Instant Role Evaluation
-              </span>
-              <h2 className="text-2xl font-bold text-white mt-1">
-                Select an Operational Identity
-              </h2>
-              <p className="text-xs text-slate-400 mt-1 max-w-md">
-                Experience role-based operational boundaries per BCAMS documentation. Each role triggers unique permissions and views.
-              </p>
+      {/* Main content */}
+      <main className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
+        <div className="w-full max-w-[960px] space-y-8">
+          {/* Welcome section */}
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-50 border border-primary-100 text-primary-700 text-xs font-medium mb-2">
+              <CheckCircle2 className="h-3 w-3" />
+              Desktop Terminal Ready
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-              {roleProfiles.map((p) => {
-                const isSelected = selectedRoleUserId === p.userId;
-                return (
-                  <button
-                    key={p.userId}
-                    type="button"
-                    onClick={() => handleRoleSelect(p.userId)}
-                    disabled={isSubmitting}
-                    className={`flex flex-col text-left p-3.5 rounded-xl border transition-all relative overflow-hidden group ${
-                      isSelected
-                        ? 'bg-slate-900 border-primary shadow-md shadow-primary/10'
-                        : 'bg-slate-900/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between w-full mb-2">
-                      <div className="p-2 rounded-lg bg-slate-800/80 group-hover:bg-slate-800 transition-colors">
-                        {p.icon}
-                      </div>
-                      <Badge variant="outline" className="text-[10px] border-slate-700 text-slate-300">
-                        {p.role.replace('_', ' ')}
-                      </Badge>
-                    </div>
-
-                    <p className="font-semibold text-white text-sm group-hover:text-primary-300 transition-colors">
-                      {p.name}
-                    </p>
-                    <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                      {p.title}
-                    </p>
-
-                    <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                      <span>{p.badge}</span>
-                      <ArrowRight className="h-3 w-3 text-slate-500 group-hover:translate-x-1 group-hover:text-primary-400 transition-all" />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            <h2 className="text-page-title text-foreground">
+              Welcome to BCAMS
+            </h2>
+            <p className="text-body text-muted-foreground max-w-lg mx-auto">
+              Select a role to explore the operational interface, or sign in with your institutional credentials.
+            </p>
           </div>
 
-          {/* Right Column: Standard Login Form */}
-          <div className="lg:col-span-5">
-            <Card className="bg-slate-900/90 border-slate-800 shadow-2xl backdrop-blur-md">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                  <KeyRound className="h-5 w-5 text-primary" />
-                  Terminal Sign-in
-                </CardTitle>
-                <CardDescription className="text-xs text-slate-400">
-                  Authenticate against local database cache or university directory
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <label className="text-xs font-medium text-slate-300 block mb-1.5">
-                      Institutional Email / Staff ID
-                    </label>
-                    <input
-                      type="text"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                      placeholder="username@institution.edu.ng"
-                      required
-                    />
-                  </div>
+          {/* Two-column layout: roles + login form */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left: Role selection */}
+            <div className="lg:col-span-7 space-y-3">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-label text-foreground">Quick Access — Select a Role</h3>
+                <span className="text-helper text-muted-foreground">4 test accounts available</span>
+              </div>
 
-                  <div>
-                    <label className="text-xs font-medium text-slate-300 block mb-1.5">
-                      Password / Security PIN
-                    </label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                      placeholder="••••••••••••"
-                      required
-                    />
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {roleProfiles.map((p) => {
+                  const isLoading = loadingRole === p.userId;
+                  return (
+                    <button
+                      key={p.userId}
+                      type="button"
+                      onClick={() => handleRoleSelect(p.userId)}
+                      disabled={isSubmitting}
+                      className={cn(
+                        'group flex flex-col text-left p-4 rounded-lg border bg-white transition-all duration-150',
+                        'hover:shadow-card-hover hover:border-primary-200',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+                        isLoading && 'border-primary bg-primary-50/30 shadow-card-hover',
+                        !isLoading && 'border-border',
+                        isSubmitting && !isLoading && 'opacity-60 cursor-not-allowed'
+                      )}
+                    >
+                      <div className="flex items-center justify-between w-full mb-3">
+                        <div className={cn('p-2 rounded-lg transition-colors', p.iconBg)}>
+                          <span className={p.iconColor}>{p.icon}</span>
+                        </div>
+                        <Badge variant="muted" className="text-[10px] font-medium capitalize">
+                          {p.badge}
+                        </Badge>
+                      </div>
 
-                  <div className="pt-2">
+                      <p className="text-body-medium text-foreground group-hover:text-primary-700 transition-colors">
+                        {p.name}
+                      </p>
+                      <p className="text-helper text-muted-foreground mt-0.5">
+                        {p.title}
+                      </p>
+
+                      <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">
+                        <p className="text-[11px] text-muted-foreground leading-snug max-w-[200px]">
+                          {p.description}
+                        </p>
+                        {isLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 text-primary animate-spinner flex-shrink-0" />
+                        ) : (
+                          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right: Sign-in form */}
+            <div className="lg:col-span-5">
+              <Card className="shadow-card">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="p-2 rounded-lg bg-primary-50">
+                      <KeyRound className="h-4 w-4 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">Sign In</CardTitle>
+                      <CardDescription className="text-xs">
+                        Institutional credentials or cached offline access
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                      <label htmlFor="login-email" className="text-xs font-medium text-foreground block mb-1.5">
+                        Email Address or Staff ID
+                      </label>
+                      <Input
+                        id="login-email"
+                        type="text"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="name@institution.edu.ng"
+                        autoComplete="email"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="login-password" className="text-xs font-medium text-foreground block mb-1.5">
+                        Password
+                      </label>
+                      <div className="relative">
+                        <Input
+                          id="login-password"
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="pr-9"
+                          autoComplete="current-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          tabIndex={-1}
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+
                     <Button
                       type="submit"
-                      variant="default"
-                      className="w-full gap-2 shadow-lg shadow-primary/20"
+                      className="w-full gap-2"
                       disabled={isSubmitting}
                     >
-                      <Lock className="h-4 w-4" />
-                      {isSubmitting ? 'Authenticating...' : 'Sign In to Terminal'}
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spinner" />
+                          Authenticating...
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-4 w-4" />
+                          Sign In
+                        </>
+                      )}
                     </Button>
-                  </div>
 
-                  <div className="relative my-4">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-slate-800" />
+                    {/* Divider */}
+                    <div className="relative my-1">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center">
+                        <span className="bg-white px-3 text-[10px] uppercase tracking-wider text-muted-foreground">
+                          or use hardware
+                        </span>
+                      </div>
                     </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-slate-900 px-2 text-slate-500 text-[10px]">
-                        Hardware Authentication
-                      </span>
-                    </div>
-                  </div>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleRoleSelect('user-sa')}
-                    className="w-full border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white gap-2 text-xs"
-                  >
-                    <Fingerprint className="h-4 w-4 text-emerald-400" />
-                    Authenticate via USB Biometric Sensor
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleRoleSelect('user-sa')}
+                      className="w-full gap-2"
+                      disabled={isSubmitting}
+                    >
+                      <Fingerprint className="h-4 w-4 text-primary" />
+                      Biometric Scanner Login
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* Security info */}
+              <div className="mt-4 space-y-2 px-1">
+                <div className="flex items-center gap-2 text-helper text-muted-foreground">
+                  <CheckCircle2 className="h-3 w-3 text-success flex-shrink-0" />
+                  <span>End-to-end encrypted authentication</span>
+                </div>
+                <div className="flex items-center gap-2 text-helper text-muted-foreground">
+                  <CheckCircle2 className="h-3 w-3 text-success flex-shrink-0" />
+                  <span>Offline credential caching enabled</span>
+                </div>
+                <div className="flex items-center gap-2 text-helper text-muted-foreground">
+                  <CheckCircle2 className="h-3 w-3 text-success flex-shrink-0" />
+                  <span>Biometric templates never stored locally</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="px-8 py-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500 z-10">
-        <span>© 2026 BCAMS Biometric Class Attendance Management System</span>
-        <span className="font-mono text-[11px]">Desktop Frontend Client • Station ID: DESK-CS-01</span>
+      <footer className="flex items-center justify-between h-10 px-6 border-t border-border bg-white text-helper text-muted-foreground flex-shrink-0">
+        <span>© 2026 BCAMS — Biometric Class Attendance Management System</span>
+        <span className="font-mono text-[11px]">Desktop Frontend Client</span>
       </footer>
     </div>
   );

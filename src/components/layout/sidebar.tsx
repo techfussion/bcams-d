@@ -106,6 +106,12 @@ const sidebarItems: SidebarItem[] = [
     icon: <ClipboardList className="h-[18px] w-[18px]" />,
     roles: ['super_admin'],
   },
+  {
+    label: 'Settings',
+    path: '/settings',
+    icon: <Settings className="h-[18px] w-[18px]" />,
+    roles: ['super_admin', 'hod', 'lecturer', 'class_rep'],
+  },
 ];
 
 export function Sidebar() {

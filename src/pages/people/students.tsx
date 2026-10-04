@@ -8,10 +8,12 @@ import React, { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/header';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { BiometricStatusBadge } from '@/components/common/status-indicators';
+import { PersonFormDialog } from '@/components/people';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api';
 import { useAuthStore } from '@/stores/auth-store';
+import { useToast } from '@/hooks';
 import type { Student, Department } from '@/types';
 import { Plus, GraduationCap, UserCheck } from 'lucide-react';
 
@@ -19,22 +21,17 @@ const statusVariants: Record<string, 'success' | 'warning' | 'muted' | 'destruct
   active: 'success',
   inactive: 'muted',
   withdrawn: 'destructive',
-  graduated: 'default' as any,
+  graduated: 'muted',
 };
 
 export function StudentsPage() {
   const { user } = useAuthStore();
+  const { toast } = useToast();
   const [students, setStudents] = useState<Student[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-
-  // Form state
-  const [fullName, setFullName] = useState('');
-  const [matricNumber, setMatricNumber] = useState('');
-  const [selectedDeptId, setSelectedDeptId] = useState('');
-  const [programme, setProgramme] = useState('B.Sc. Computer Science');
-  const [level, setLevel] = useState(200);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadData() {
@@ -45,7 +42,6 @@ export function StudentsPage() {
         ]);
         setStudents(studs);
         setDepartments(depts);
-        if (depts.length > 0) setSelectedDeptId(depts[0].id);
       } catch (err) {
         console.error('Failed to load students:', err);
       } finally {
@@ -55,31 +51,13 @@ export function StudentsPage() {
     loadData();
   }, [user]);
 
-  const handleRegisterStudent = (e: React.FormEvent) => {
-    e.preventDefault();
-    const dept = departments.find(d => d.id === selectedDeptId) || departments[0];
-    const newStudent: Student = {
-      id: `stu-${Date.now().toString().slice(-4)}`,
-      fullName,
-      matricNumber,
-      departmentId: dept.id,
-      departmentName: dept.name,
-      programme,
-      level,
-      status: 'active',
-      specializations: ['student'],
-      biometricStatus: 'not_enrolled',
-      enrolledFingers: 0,
-      academicSession: '2026/2027',
-      courseEnrollments: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
+  const handleStudentCreated = (newStudent: Student) => {
     setStudents([newStudent, ...students]);
-    setIsRegisterModalOpen(false);
-    setFullName('');
-    setMatricNumber('');
+    toast({
+      title: 'Student Registered',
+      description: `${newStudent.fullName} (${newStudent.matricNumber}) was successfully added.`,
+      variant: 'success',
+    });
   };
 
   const columns: DataTableColumn<Student>[] = [
@@ -90,8 +68,8 @@ export function StudentsPage() {
       sortFn: (a, b) => a.fullName.localeCompare(b.fullName),
       render: (s) => (
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-xs font-semibold text-primary-700">
-            {s.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+          <div className="w-8 h-8 rounded-full bg-primary-50 text-primary flex items-center justify-center font-bold text-xs">
+            {s.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
           </div>
           <div>
             <p className="font-semibold text-foreground text-xs">{s.fullName}</p>
@@ -100,13 +78,40 @@ export function StudentsPage() {
         </div>
       ),
     },
-    { key: 'programme', header: 'Programme', render: (s) => <span className="text-xs text-foreground">{s.programme}</span> },
-    { key: 'level', header: 'Level', render: (s) => <span className="text-xs font-mono text-muted-foreground">{s.level}L</span> },
-    { key: 'department', header: 'Department', render: (s) => <span className="text-xs text-foreground">{s.departmentName}</span> },
+    {
+      key: 'department',
+      header: 'Department & Faculty',
+      sortable: true,
+      sortFn: (a, b) => a.departmentName.localeCompare(b.departmentName),
+      render: (s) => (
+        <div>
+          <p className="text-xs font-medium text-foreground">{s.departmentName}</p>
+          <p className="text-[11px] text-muted-foreground">{s.programme}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'level',
+      header: 'Level',
+      sortable: true,
+      sortFn: (a, b) => a.level - b.level,
+      render: (s) => (
+        <Badge variant="outline" className="font-mono text-xs">
+          {s.level}L
+        </Badge>
+      ),
+    },
     {
       key: 'status',
-      header: 'Status',
-      render: (s) => <Badge variant={statusVariants[s.status] || 'muted'}>{s.status.charAt(0).toUpperCase() + s.status.slice(1)}</Badge>,
+      header: 'Academic Status',
+      render: (s) => (
+        <Badge
+          variant={statusVariants[s.status] || 'default'}
+          className="capitalize text-xs font-medium"
+        >
+          {s.status}
+        </Badge>
+      ),
     },
     {
       key: 'biometric',
@@ -114,17 +119,28 @@ export function StudentsPage() {
       render: (s) => (
         <div className="flex items-center gap-2">
           <BiometricStatusBadge status={s.biometricStatus} />
-          <span className="text-xs font-mono text-muted-foreground">({s.enrolledFingers}/10)</span>
+          <span className="text-xs font-mono text-muted-foreground font-semibold">
+            {s.enrolledFingers}/10
+          </span>
         </div>
+      ),
+    },
+    {
+      key: 'enrollments',
+      header: 'Enrolled Courses',
+      render: (s) => (
+        <span className="text-xs font-mono text-muted-foreground">
+          {s.courseEnrollments.length} courses
+        </span>
       ),
     },
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-full">
       <Header
         title="Student Registry"
-        subtitle="Manage student academic records, programme enrollments, and biometric profile readiness"
+        subtitle="Manage student identities, department affiliations, academic standing, and biometric verification status."
         actions={
           <Button
             size="sm"
@@ -136,138 +152,73 @@ export function StudentsPage() {
           </Button>
         }
       />
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-section animate-fadeIn">
-          <DataTable
-            columns={columns}
-            data={students}
-            isLoading={isLoading}
-            searchPlaceholder="Search students by name or matric number..."
-            searchFn={(s, q) => s.fullName.toLowerCase().includes(q) || s.matricNumber.toLowerCase().includes(q)}
-            getRowId={(s) => s.id}
-            emptyTitle="No students found"
-            emptyDescription="No student records exist for this scope."
-            emptyAction={{ label: 'Register Student', onClick: () => setIsRegisterModalOpen(true) }}
-          />
-        </div>
-      </div>
 
-      {/* Register Student Modal */}
-      {isRegisterModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl border border-border shadow-2xl max-w-md w-full p-6 space-y-4 animate-scaleIn">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5 text-primary" />
-                <h3 className="font-bold text-foreground text-base">
-                  Register Student (FR-8.1)
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsRegisterModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground text-sm font-medium"
-              >
-                ✕
-              </button>
+      <div className="flex-1 p-6 space-y-6">
+        {/* Quick Stats Banner */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-xl border border-border bg-white p-4 flex items-center justify-between shadow-xs">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Total Registered
+              </p>
+              <p className="text-2xl font-bold text-foreground mt-1">{students.length}</p>
             </div>
+            <div className="h-10 w-10 rounded-lg bg-primary-50 text-primary flex items-center justify-center">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+          </div>
 
-            <form onSubmit={handleRegisterStudent} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-foreground block mb-1">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  placeholder="e.g. Daniel Chukwuma"
-                  required
-                />
-              </div>
+          <div className="rounded-xl border border-border bg-white p-4 flex items-center justify-between shadow-xs">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Biometrically Verified
+              </p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {students.filter((s) => s.biometricStatus === 'complete' || s.biometricStatus === 'activated').length}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+              <UserCheck className="h-5 w-5" />
+            </div>
+          </div>
 
-              <div>
-                <label className="text-xs font-semibold text-foreground block mb-1">
-                  Matriculation Number
-                </label>
-                <input
-                  type="text"
-                  value={matricNumber}
-                  onChange={(e) => setMatricNumber(e.target.value)}
-                  className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                  placeholder="e.g. CS/2024/042"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">
-                    Department
-                  </label>
-                  <select
-                    value={selectedDeptId}
-                    onChange={(e) => setSelectedDeptId(e.target.value)}
-                    className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    required
-                  >
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">
-                    Level
-                  </label>
-                  <select
-                    value={level}
-                    onChange={(e) => setLevel(Number(e.target.value))}
-                    className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value={100}>100 Level</option>
-                    <option value={200}>200 Level</option>
-                    <option value={300}>300 Level</option>
-                    <option value={400}>400 Level</option>
-                    <option value={500}>500 Level</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-foreground block mb-1">
-                  Programme of Study
-                </label>
-                <input
-                  type="text"
-                  value={programme}
-                  onChange={(e) => setProgramme(e.target.value)}
-                  className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  placeholder="e.g. B.Sc. Computer Science"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsRegisterModalOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm">
-                  Register Student
-                </Button>
-              </div>
-            </form>
+          <div className="rounded-xl border border-border bg-white p-4 flex items-center justify-between shadow-xs">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Pending Enrollment
+              </p>
+              <p className="text-2xl font-bold text-amber-700 mt-1">
+                {students.filter((s) => s.biometricStatus === 'not_enrolled' || s.biometricStatus === 'partial').length}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
+              <UserCheck className="h-5 w-5" />
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Data Table */}
+        <DataTable
+          columns={columns}
+          data={students}
+          isLoading={isLoading}
+          searchPlaceholder="Search student by name, matric number, or programme..."
+          emptyTitle="No students found"
+          emptyDescription="No registered students match the active department filters."
+          selectable={true}
+          selectedIds={selectedStudentIds}
+          onSelectionChange={setSelectedStudentIds}
+        />
+      </div>
+
+      {/* Zod-validated Registration Dialog */}
+      <PersonFormDialog
+        open={isRegisterModalOpen}
+        onOpenChange={setIsRegisterModalOpen}
+        personType="student"
+        departments={departments}
+        onSubmitStudent={handleStudentCreated}
+      />
     </div>
   );
 }

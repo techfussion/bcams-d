@@ -21,7 +21,6 @@ interface HeaderProps {
 }
 
 export function Header({ title, subtitle, actions }: HeaderProps) {
-  const { user, switchRole } = useAuthStore();
   const { connection, pendingEvents, lastSyncAt } = useSyncStore();
 
   return (
@@ -50,7 +49,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
             </div>
           ) : (
             <span className="text-[11px] text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              ✓ Synced
+              Synced
             </span>
           )}
           {lastSyncAt && (
@@ -63,19 +62,6 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
 
         {/* Separator */}
         <div className="h-6 w-px bg-border" />
-
-        {/* Dev: Role Switcher */}
-        <Select value={user?.role} onValueChange={(v) => switchRole(v as UserRole)}>
-          <SelectTrigger className="w-[150px] h-8 text-xs">
-            <SelectValue placeholder="Role" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="super_admin">Super Admin</SelectItem>
-            <SelectItem value="hod">HOD</SelectItem>
-            <SelectItem value="lecturer">Lecturer</SelectItem>
-            <SelectItem value="class_rep">Class Rep</SelectItem>
-          </SelectContent>
-        </Select>
 
         {/* Notifications placeholder */}
         <Button variant="ghost" size="icon-sm" className="relative" aria-label="Notifications">

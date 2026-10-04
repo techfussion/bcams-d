@@ -8,26 +8,24 @@ import React, { useEffect, useState } from 'react';
 import { Header } from '@/components/layout/header';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { BiometricStatusBadge } from '@/components/common/status-indicators';
+import { PersonFormDialog } from '@/components/people';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api';
 import { useAuthStore } from '@/stores/auth-store';
+import { useToast } from '@/hooks';
 import type { Lecturer, Department, Course } from '@/types';
 import { Plus, Users, BookOpen } from 'lucide-react';
 
 export function LecturersPage() {
   const { user } = useAuthStore();
+  const { toast } = useToast();
   const [lecturers, setLecturers] = useState<Lecturer[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-
-  // Form state
-  const [fullName, setFullName] = useState('');
-  const [staffId, setStaffId] = useState('');
-  const [selectedDeptId, setSelectedDeptId] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
+  const [selectedLecturerIds, setSelectedLecturerIds] = useState<string[]>([]);
 
   useEffect(() => {
     async function loadData() {
@@ -40,7 +38,6 @@ export function LecturersPage() {
         setLecturers(lecs);
         setDepartments(depts);
         setCourses(crs);
-        if (depts.length > 0) setSelectedDeptId(depts[0].id);
       } catch (err) {
         console.error('Failed to load lecturers:', err);
       } finally {
@@ -50,29 +47,13 @@ export function LecturersPage() {
     loadData();
   }, [user]);
 
-  const handleRegisterLecturer = (e: React.FormEvent) => {
-    e.preventDefault();
-    const dept = departments.find(d => d.id === selectedDeptId) || departments[0];
-    const newLecturer: Lecturer = {
-      id: `lec-${Date.now().toString().slice(-4)}`,
-      fullName,
-      staffId,
-      departmentId: dept.id,
-      departmentName: dept.name,
-      contactEmail,
-      specializations: ['lecturer'],
-      biometricStatus: 'not_enrolled',
-      enrolledFingers: 0,
-      assignedCourses: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
+  const handleLecturerCreated = (newLecturer: Lecturer) => {
     setLecturers([newLecturer, ...lecturers]);
-    setIsRegisterModalOpen(false);
-    setFullName('');
-    setStaffId('');
-    setContactEmail('');
+    toast({
+      title: 'Lecturer Registered',
+      description: `${newLecturer.fullName} was successfully registered for ${newLecturer.departmentName}.`,
+      variant: 'success',
+    });
   };
 
   const columns: DataTableColumn<Lecturer>[] = [
@@ -83,8 +64,8 @@ export function LecturersPage() {
       sortFn: (a, b) => a.fullName.localeCompare(b.fullName),
       render: (l) => (
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-xs font-semibold text-primary-700">
-            {l.fullName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+          <div className="w-8 h-8 rounded-full bg-primary-50 text-primary flex items-center justify-center font-bold text-xs">
+            {l.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
           </div>
           <div>
             <p className="font-semibold text-foreground text-xs">{l.fullName}</p>
@@ -93,32 +74,60 @@ export function LecturersPage() {
         </div>
       ),
     },
-    { key: 'department', header: 'Department', render: (l) => <span className="text-xs text-foreground">{l.departmentName}</span> },
+    {
+      key: 'department',
+      header: 'Department',
+      sortable: true,
+      sortFn: (a, b) => a.departmentName.localeCompare(b.departmentName),
+      render: (l) => (
+        <span className="text-xs font-medium text-foreground">{l.departmentName}</span>
+      ),
+    },
+    {
+      key: 'contact',
+      header: 'Contact Info',
+      render: (l) => (
+        <span className="text-xs text-muted-foreground font-mono">
+          {l.contactEmail || '—'}
+        </span>
+      ),
+    },
     {
       key: 'courses',
       header: 'Assigned Courses',
       render: (l) => (
         <div className="flex flex-wrap gap-1">
-          {l.assignedCourses.filter(c => c.isActive).map(c => (
-            <Badge key={c.id} variant="outline" className="text-[10px] bg-muted/40 font-mono">
-              {c.courseCode}
-            </Badge>
-          ))}
-          {l.assignedCourses.length === 0 && (
+          {l.assignedCourses.length > 0 ? (
+            l.assignedCourses.map((c) => (
+              <Badge key={c.id} variant="outline" className="font-mono text-[10px]">
+                {c.courseCode}
+              </Badge>
+            ))
+          ) : (
             <span className="text-xs text-muted-foreground italic">None assigned</span>
           )}
         </div>
       ),
     },
-    { key: 'contact', header: 'Contact Email', render: (l) => <span className="text-xs text-muted-foreground font-mono">{l.contactEmail || '—'}</span> },
-    { key: 'biometric', header: 'Biometric Status', render: (l) => <BiometricStatusBadge status={l.biometricStatus} /> },
+    {
+      key: 'biometric',
+      header: 'Biometric Status',
+      render: (l) => (
+        <div className="flex items-center gap-2">
+          <BiometricStatusBadge status={l.biometricStatus} />
+          <span className="text-xs font-mono text-muted-foreground font-semibold">
+            {l.enrolledFingers}/10
+          </span>
+        </div>
+      ),
+    },
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-full">
       <Header
-        title="Lecturer Registry"
-        subtitle="FR-8.2: Faculty registry, course assignments, and substitute teaching authorities"
+        title="Lecturer Directory"
+        subtitle="Manage academic faculty, assigned course offerings, and biometric authorization readiness."
         actions={
           <Button
             size="sm"
@@ -130,121 +139,73 @@ export function LecturersPage() {
           </Button>
         }
       />
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-section animate-fadeIn">
-          <DataTable
-            columns={columns}
-            data={lecturers}
-            isLoading={isLoading}
-            searchPlaceholder="Search lecturers by name or staff ID..."
-            searchFn={(l, q) => l.fullName.toLowerCase().includes(q) || l.staffId.toLowerCase().includes(q)}
-            getRowId={(l) => l.id}
-            emptyTitle="No lecturers found"
-            emptyDescription="No lecturer records have been created yet."
-            emptyAction={{ label: 'Register Lecturer', onClick: () => setIsRegisterModalOpen(true) }}
-          />
-        </div>
-      </div>
 
-      {/* Register Lecturer Modal */}
-      {isRegisterModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-card rounded-2xl border border-border shadow-2xl max-w-md w-full p-6 space-y-4 animate-scaleIn">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                <h3 className="font-bold text-foreground text-base">
-                  Register Lecturer (FR-8.2)
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsRegisterModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground text-sm font-medium"
-              >
-                ✕
-              </button>
+      <div className="flex-1 p-6 space-y-6">
+        {/* Quick Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-xl border border-border bg-white p-4 flex items-center justify-between shadow-xs">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Total Academic Faculty
+              </p>
+              <p className="text-2xl font-bold text-foreground mt-1">{lecturers.length}</p>
             </div>
+            <div className="h-10 w-10 rounded-lg bg-primary-50 text-primary flex items-center justify-center">
+              <Users className="h-5 w-5" />
+            </div>
+          </div>
 
-            <form onSubmit={handleRegisterLecturer} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-foreground block mb-1">
-                  Full Name & Title
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  placeholder="e.g. Dr. Kemi Balogun"
-                  required
-                />
-              </div>
+          <div className="rounded-xl border border-border bg-white p-4 flex items-center justify-between shadow-xs">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Active Course Assignments
+              </p>
+              <p className="text-2xl font-bold text-primary mt-1">
+                {lecturers.reduce((acc, l) => acc + l.assignedCourses.length, 0)}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
+              <BookOpen className="h-5 w-5" />
+            </div>
+          </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">
-                    Staff ID
-                  </label>
-                  <input
-                    type="text"
-                    value={staffId}
-                    onChange={(e) => setStaffId(e.target.value)}
-                    className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                    placeholder="e.g. LEC/CS/005"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-foreground block mb-1">
-                    Department
-                  </label>
-                  <select
-                    value={selectedDeptId}
-                    onChange={(e) => setSelectedDeptId(e.target.value)}
-                    className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    required
-                  >
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-foreground block mb-1">
-                  Institutional Email
-                </label>
-                <input
-                  type="email"
-                  value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
-                  className="w-full text-xs h-9 rounded-md border border-input bg-background px-3 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  placeholder="k.balogun@institution.edu.ng"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsRegisterModalOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" size="sm">
-                  Register Lecturer
-                </Button>
-              </div>
-            </form>
+          <div className="rounded-xl border border-border bg-white p-4 flex items-center justify-between shadow-xs">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Biometric Ready
+              </p>
+              <p className="text-2xl font-bold text-emerald-700 mt-1">
+                {lecturers.filter((l) => l.biometricStatus === 'complete' || l.biometricStatus === 'activated').length}
+              </p>
+            </div>
+            <div className="h-10 w-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+              <Users className="h-5 w-5" />
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Data Table */}
+        <DataTable
+          columns={columns}
+          data={lecturers}
+          isLoading={isLoading}
+          searchPlaceholder="Search lecturer by name, staff ID, or department..."
+          emptyTitle="No lecturers found"
+          emptyDescription="No registered lecturers match the query."
+          selectable={true}
+          selectedIds={selectedLecturerIds}
+          onSelectionChange={setSelectedLecturerIds}
+        />
+      </div>
+
+      {/* Registration Dialog */}
+      <PersonFormDialog
+        open={isRegisterModalOpen}
+        onOpenChange={setIsRegisterModalOpen}
+        personType="lecturer"
+        departments={departments}
+        onSubmitLecturer={handleLecturerCreated}
+      />
     </div>
   );
 }

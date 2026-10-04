@@ -2,11 +2,15 @@
  * BCAMS Application Shell
  * 
  * Main layout with sidebar + header + scrollable content area.
+ * Includes global providers: Toaster, CommandPalette, SyncCenterModal.
  */
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './sidebar';
 import { SyncCenterModal } from '@/components/common/sync-modal';
+import { Toaster } from '@/components/common/toaster';
+import { CommandPalette } from '@/components/common/command-palette';
+import { ErrorBoundary } from '@/components/common/error-boundary';
 
 export function AppShell() {
   return (
@@ -18,12 +22,16 @@ export function AppShell() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Page content (each page provides its own Header + content) */}
         <div className="flex-1 overflow-y-auto">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
 
-      {/* Global Sync & Clock Integrity Modal */}
+      {/* Global overlays */}
       <SyncCenterModal />
+      <Toaster />
+      <CommandPalette />
     </div>
   );
 }

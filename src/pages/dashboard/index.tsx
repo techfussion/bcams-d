@@ -2,7 +2,6 @@
  * BCAMS Dashboard
  * 
  * Operational landing page showing key system metrics.
- * Content is role-scoped (Addendum 5).
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -10,7 +9,7 @@ import { Header } from '@/components/layout/header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { SessionStatusBadge, SyncStatusBadge, PunctualityBadge } from '@/components/common/status-indicators';
+import { SessionStatusBadge, PunctualityBadge } from '@/components/common/status-indicators';
 import { StatCardSkeleton } from '@/components/common/empty-error-states';
 import { api } from '@/api';
 import { useAuthStore } from '@/stores/auth-store';
@@ -18,8 +17,8 @@ import { useSyncStore } from '@/stores/sync-store';
 import { formatTime, formatDate, computeAttendancePercentage } from '@/lib/utils';
 import type { Session, DailyClockRecord } from '@/types';
 import {
-  Users, GraduationCap, CalendarCheck, Fingerprint, Monitor, BarChart3,
-  ArrowRight, Clock, AlertTriangle, CheckCircle2, TrendingUp,
+  GraduationCap, CalendarCheck, Fingerprint, Monitor, BarChart3,
+  ArrowRight, Clock, AlertTriangle, TrendingUp,
 } from 'lucide-react';
 
 interface StatCardProps {
@@ -48,7 +47,7 @@ function StatCard({ title, value, description, icon, trend, onClick }: StatCardP
               </div>
             )}
           </div>
-          <div className="rounded-lg bg-primary-50 p-2.5">
+          <div className="rounded-lg p-2.5">
             {icon}
           </div>
         </div>
@@ -153,7 +152,6 @@ export function DashboardPage() {
                   value={`${stats.averageAttendanceRate}%`}
                   description={`${stats.belowThresholdStudents} below threshold`}
                   icon={<BarChart3 className="h-5 w-5 text-primary" />}
-                  trend={{ value: 3, label: 'vs last month' }}
                   onClick={() => navigate('/reports')}
                 />
               )}

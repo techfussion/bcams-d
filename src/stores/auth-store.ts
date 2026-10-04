@@ -12,11 +12,10 @@ interface AuthState {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  
+
   // Actions
   login: (userId?: string) => Promise<void>;
   logout: () => void;
-  switchRole: (role: UserRole) => void;
 }
 
 const roleToUserId: Record<UserRole, string> = {
@@ -46,14 +45,5 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     set({ user: null, isAuthenticated: false, isLoading: false });
-  },
-
-  switchRole: (role: UserRole) => {
-    const userId = roleToUserId[role];
-    setMockUser(userId);
-    // Re-fetch user
-    api.getCurrentUser().then(user => {
-      set({ user, isAuthenticated: true });
-    });
   },
 }));

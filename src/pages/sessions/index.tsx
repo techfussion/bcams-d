@@ -15,13 +15,16 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { api } from '@/api';
 import { useAuthStore } from '@/stores/auth-store';
+import { useToast } from '@/hooks';
+import { generateCSV, downloadCSV } from '@/domain';
 import { formatDate, formatTime, computeAttendancePercentage } from '@/lib/utils';
 import type { Session, SessionState, CourseOffering, Lecturer } from '@/types';
-import { Plus, CalendarCheck, MapPin, Users } from 'lucide-react';
+import { Plus, CalendarCheck, MapPin, Users, Download } from 'lucide-react';
 
 export function SessionsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { toast } = useToast();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [courseOfferings, setCourseOfferings] = useState<CourseOffering[]>([]);
   const [lecturers, setLecturers] = useState<Lecturer[]>([]);
@@ -82,13 +85,41 @@ export function SessionsPage() {
       geofenceRadius,
       attendanceCount: 0,
       enrolledCount: offering.enrolledStudents || 75,
-      location: offering.approvedLocation || { latitude: 6.5244, longitude: 3.3792 },
       createdAt: new Date().toISOString(),
     };
 
     setSessions([newSession, ...sessions]);
     setIsCreateModalOpen(false);
+    toast({
+      title: 'Session Created',
+      description: `New session for ${newSession.courseCode} created in ${newSession.state} state.`,
+      variant: 'success',
+    });
     navigate(`/sessions/${newSession.id}`);
+  };
+
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+
+  const handleExportCSV = () => {
+    const csv = generateCSV(sessions, [
+      { header: 'Session ID', accessor: (s) => s.id },
+      { header: 'Course Code', accessor: (s) => s.courseCode },
+      { header: 'Course Title', accessor: (s) => s.courseTitle },
+      { header: 'Status', accessor: (s) => s.state.toUpperCase() },
+      { header: 'Lecturer', accessor: (s) => s.lecturerName },
+      { header: 'Substitute', accessor: (s) => s.substituteLecturerName || 'None' },
+      { header: 'Scheduled Start', accessor: (s) => (s.scheduledStart ? formatDate(s.scheduledStart) : '—') },
+      { header: 'Attendance Count', accessor: (s) => s.attendanceCount },
+      { header: 'Enrolled Count', accessor: (s) => s.enrolledCount },
+      { header: 'Attendance %', accessor: (s) => `${computeAttendancePercentage(s.attendanceCount, s.enrolledCount)}%` },
+    ]);
+
+    downloadCSV(csv, `BCAMS-Sessions-${new Date().toISOString().split('T')[0]}`);
+    toast({
+      title: 'Sessions Exported',
+      description: `Downloaded ${sessions.length} class session records as CSV.`,
+      variant: 'success',
+    });
   };
 
   const filteredSessions = activeTab === 'all'
@@ -178,14 +209,25 @@ export function SessionsPage() {
         title="Class Sessions"
         subtitle="Manage lecture attendance sessions, lecturer authorization, and geofence perimeters"
         actions={
-          <Button
-            size="sm"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="gap-1.5 shadow-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Create Session
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCSV}
+              className="gap-1.5 shadow-sm"
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="gap-1.5 shadow-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Create Session
+            </Button>
+          </div>
         }
       />
       <div className="flex-1 overflow-y-auto">
@@ -208,13 +250,11 @@ export function SessionsPage() {
                 data={filteredSessions}
                 isLoading={isLoading}
                 searchPlaceholder="Search sessions..."
-                searchFn={(s, q) =>
-                  s.courseCode.toLowerCase().includes(q) ||
-                  s.courseTitle.toLowerCase().includes(q) ||
-                  s.lecturerName.toLowerCase().includes(q)
-                }
                 onRowClick={(s) => navigate(`/sessions/${s.id}`)}
                 getRowId={(s) => s.id}
+                selectable={true}
+                selectedIds={selectedSessionIds}
+                onSelectionChange={setSelectedSessionIds}
                 emptyTitle="No sessions found"
                 emptyDescription="No class attendance sessions match the selected status."
                 emptyAction={{

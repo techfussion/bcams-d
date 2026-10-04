@@ -16,6 +16,8 @@ import { DataTable, type DataTableColumn } from '@/components/common/data-table'
 import { PageSkeleton } from '@/components/common/empty-error-states';
 import { api } from '@/api';
 import { useAuthStore } from '@/stores/auth-store';
+import { useToast } from '@/hooks';
+import { generateCSV, downloadCSV, printTable } from '@/domain';
 import type { CourseOffering, Department, Student } from '@/types';
 import {
   BarChart3, Download, Printer, Users, CheckCircle2,
@@ -43,7 +45,6 @@ export function ReportsPage() {
   const [selectedDept, setSelectedDept] = useState<string>('all');
   const [selectedOffering, setSelectedOffering] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
-  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -108,27 +109,48 @@ export function ReportsPage() {
     ? Math.round(studentReports.reduce((acc, r) => acc + r.attendanceRate, 0) / studentReports.length)
     : 0;
 
+  const { toast } = useToast();
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+
   const handleExportCSV = () => {
-    const csvHeader = 'Matric Number,Student Name,Programme,Level,Attended,Total,Rate %,Threshold %,Status\n';
-    const csvRows = studentReports.map(r => 
-      `"${r.matricNumber}","${r.fullName}","${r.programme}","${r.level}",${r.sessionsAttended},${r.totalSessions},${r.attendanceRate}%,${r.threshold}%,"${r.status.toUpperCase()}"`
-    ).join('\n');
+    const csv = generateCSV(studentReports, [
+      { header: 'Matric Number', accessor: (r) => r.matricNumber },
+      { header: 'Full Name', accessor: (r) => r.fullName },
+      { header: 'Programme', accessor: (r) => r.programme },
+      { header: 'Level', accessor: (r) => `${r.level}L` },
+      { header: 'Sessions Attended', accessor: (r) => r.sessionsAttended },
+      { header: 'Total Sessions', accessor: (r) => r.totalSessions },
+      { header: 'Attendance %', accessor: (r) => `${r.attendanceRate}%` },
+      { header: 'Required Threshold %', accessor: (r) => `${r.threshold}%` },
+      { header: 'Exam Status', accessor: (r) => r.status.toUpperCase() },
+    ]);
 
-    const blob = new Blob([csvHeader + csvRows], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `BCAMS-Report-${currentOffering?.courseCode || 'Course'}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setExportNotice('Official Attendance Ledger exported successfully to CSV.');
-    setTimeout(() => setExportNotice(null), 4000);
+    downloadCSV(csv, `BCAMS-Eligibility-Report-${currentOffering?.courseCode || 'Course'}`);
+    toast({
+      title: 'Report Exported',
+      description: `Official attendance roster for ${currentOffering?.courseCode || 'Course'} exported to CSV.`,
+      variant: 'success',
+    });
   };
 
   const handlePrint = () => {
-    window.print();
+    printTable(
+      `Course Attendance & Exam Eligibility: ${currentOffering?.courseCode || ''} — ${currentOffering?.courseTitle || ''}`,
+      studentReports,
+      [
+        { header: 'Matric No.', accessor: (r) => r.matricNumber },
+        { header: 'Student Name', accessor: (r) => r.fullName },
+        { header: 'Programme', accessor: (r) => `${r.level}L ${r.programme}` },
+        { header: 'Attended', accessor: (r) => `${r.sessionsAttended}/${r.totalSessions}` },
+        { header: 'Rate', accessor: (r) => `${r.attendanceRate}%` },
+        { header: 'Status', accessor: (r) => r.status.toUpperCase() },
+      ],
+      {
+        institution: 'Biometric Class Attendance Management System (BCAMS)',
+        date: new Date().toLocaleDateString(),
+        generatedBy: user?.fullName || 'Exam Officer',
+      }
+    );
   };
 
   const columns: DataTableColumn<StudentEligibilityReport>[] = [
@@ -248,12 +270,6 @@ export function ReportsPage() {
       />
 
       <div className="flex-1 p-6 space-y-6">
-        {exportNotice && (
-          <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm font-medium text-emerald-900 animate-fadeIn">
-            ✓ {exportNotice}
-          </div>
-        )}
-
         {/* Filter Toolbar */}
         <Card className="shadow-sm">
           <CardContent className="p-4">
@@ -389,6 +405,10 @@ export function ReportsPage() {
             columns={columns}
             searchable={true}
             searchPlaceholder="Search student by name or matric number..."
+            getRowId={(r) => r.studentId}
+            selectable={true}
+            selectedIds={selectedStudentIds}
+            onSelectionChange={setSelectedStudentIds}
             emptyTitle="No student records"
             emptyDescription="No students found for this course offering."
           />

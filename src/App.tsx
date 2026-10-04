@@ -27,6 +27,7 @@ import { DevicesPage } from '@/pages/devices';
 import { PoliciesPage } from '@/pages/policies';
 import { ReportsPage } from '@/pages/reports';
 import { AuditPage } from '@/pages/audit';
+import { SettingsPage } from '@/pages/settings';
 import { LoginPage } from '@/pages/auth/login';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -97,6 +98,9 @@ export function App() {
           <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/audit" element={<AuditPage />} />
+
+          {/* Settings */}
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
         {/* Catch-all */}

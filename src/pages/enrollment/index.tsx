@@ -20,11 +20,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { api } from '@/api';
 import { scannerService } from '@/services/scanner-service';
 import { cn } from '@/lib/utils';
+import { HandDiagram } from '@/components/enrollment';
+import { useToast } from '@/hooks';
 import type { Student, FingerEnrollment, FingerPosition, ScannerState, BiometricEnrollmentStatus } from '@/types';
 import { FINGER_LABELS, FINGER_POSITIONS, ENROLLMENT_TARGET, ENROLLMENT_ACTIVATION_MIN } from '@/types';
 import { Fingerprint, CheckCircle2, XCircle, RotateCcw, User, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
 
 export function EnrollmentPage() {
+  const { toast } = useToast();
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [scannerState, setScannerState] = useState<ScannerState>('disconnected');
@@ -34,6 +37,7 @@ export function EnrollmentPage() {
   const [scanningFinger, setScanningFinger] = useState<FingerPosition | null>(null);
   const [scanFeedback, setScanFeedback] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
   useEffect(() => {
     const unsub = scannerService.onStateChange(setScannerState);
@@ -114,6 +118,12 @@ export function EnrollmentPage() {
         ? { ...s, enrolledFingers: enrolledCount, biometricStatus: newStatus }
         : s
     ));
+
+    toast({
+      title: 'Biometric Enrollment Saved',
+      description: `${selectedPerson.fullName}: ${enrolledCount}/10 fingers enrolled (${newStatus.replace('_', ' ')}).`,
+      variant: 'success',
+    });
 
     setEnrollDialogOpen(false);
   };
@@ -226,6 +236,9 @@ export function EnrollmentPage() {
               s.matricNumber.toLowerCase().includes(q)
             }
             getRowId={(s) => s.id}
+            selectable={true}
+            selectedIds={selectedStudentIds}
+            onSelectionChange={setSelectedStudentIds}
             emptyTitle="No students found"
             emptyDescription="No students match the current enrollment filter."
           />
@@ -289,101 +302,11 @@ export function EnrollmentPage() {
             </div>
 
             {/* Hands Visual Layout */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Left Hand */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-center text-muted-foreground">
-                  Left Hand (Fingers 1–5)
-                </h4>
-                <div className="grid grid-cols-5 gap-2">
-                  {(['left_little', 'left_ring', 'left_middle', 'left_index', 'left_thumb'] as FingerPosition[]).map(pos => {
-                    const enrollment = fingerEnrollments.find(f => f.position === pos);
-                    const enrolled = enrollment?.enrolled;
-                    const isScanningThis = scanningFinger === pos;
-                    return (
-                      <button
-                        key={pos}
-                        type="button"
-                        onClick={() => handleEnrollFinger(pos)}
-                        disabled={isScanningThis}
-                        className={cn(
-                          'flex flex-col items-center justify-between p-2.5 rounded-xl border transition-all h-24 text-center group cursor-pointer',
-                          enrolled
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-xs'
-                            : 'border-border bg-background hover:border-primary hover:bg-primary-50/40 text-muted-foreground',
-                          isScanningThis && 'border-primary ring-2 ring-primary/30 animate-pulse'
-                        )}
-                        title={enrolled ? `Enrolled (${enrollment?.quality}% quality). Click to re-enroll.` : 'Click to capture finger'}
-                      >
-                        <span className="text-[10px] font-semibold block leading-tight">
-                          {FINGER_LABELS[pos].replace('Left ', '')}
-                        </span>
-                        <Fingerprint className={cn(
-                          'h-6 w-6 my-1 transition-transform group-hover:scale-110',
-                          enrolled ? 'text-emerald-600' : 'text-muted-foreground'
-                        )} />
-                        {enrolled ? (
-                          <span className="text-[10px] font-mono text-emerald-700 font-bold">
-                            {enrollment?.quality}%
-                          </span>
-                        ) : (
-                          <span className="text-[9px] text-muted-foreground uppercase">
-                            Scan
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Right Hand */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-center text-muted-foreground">
-                  Right Hand (Fingers 6–10)
-                </h4>
-                <div className="grid grid-cols-5 gap-2">
-                  {(['right_thumb', 'right_index', 'right_middle', 'right_ring', 'right_little'] as FingerPosition[]).map(pos => {
-                    const enrollment = fingerEnrollments.find(f => f.position === pos);
-                    const enrolled = enrollment?.enrolled;
-                    const isScanningThis = scanningFinger === pos;
-                    return (
-                      <button
-                        key={pos}
-                        type="button"
-                        onClick={() => handleEnrollFinger(pos)}
-                        disabled={isScanningThis}
-                        className={cn(
-                          'flex flex-col items-center justify-between p-2.5 rounded-xl border transition-all h-24 text-center group cursor-pointer',
-                          enrolled
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-xs'
-                            : 'border-border bg-background hover:border-primary hover:bg-primary-50/40 text-muted-foreground',
-                          isScanningThis && 'border-primary ring-2 ring-primary/30 animate-pulse'
-                        )}
-                        title={enrolled ? `Enrolled (${enrollment?.quality}% quality). Click to re-enroll.` : 'Click to capture finger'}
-                      >
-                        <span className="text-[10px] font-semibold block leading-tight">
-                          {FINGER_LABELS[pos].replace('Right ', '')}
-                        </span>
-                        <Fingerprint className={cn(
-                          'h-6 w-6 my-1 transition-transform group-hover:scale-110',
-                          enrolled ? 'text-emerald-600' : 'text-muted-foreground'
-                        )} />
-                        {enrolled ? (
-                          <span className="text-[10px] font-mono text-emerald-700 font-bold">
-                            {enrollment?.quality}%
-                          </span>
-                        ) : (
-                          <span className="text-[9px] text-muted-foreground uppercase">
-                            Scan
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <HandDiagram
+              enrollments={fingerEnrollments}
+              scanningFinger={scanningFinger}
+              onSelectFinger={handleEnrollFinger}
+            />
 
             {/* Quick Helper Simulator */}
             <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/20 text-xs">
