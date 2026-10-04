@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import type { SyncState, ConnectionStatus, ClockIntegrityStatus } from '@/types';
 import { api } from '@/api';
+import { offlineQueue } from '@/services/offline-queue-service';
 
 export interface PendingQueueItem {
   id: string;
@@ -28,8 +29,10 @@ interface SyncStoreState extends SyncState {
   pendingItems: PendingQueueItem[];
   calibrationPair: CalibrationPair;
   isSyncModalOpen: boolean;
+  isInitialized: boolean;
   
   // Actions
+  initializeQueue: () => Promise<void>;
   refresh: () => Promise<void>;
   setConnection: (status: ConnectionStatus) => void;
   toggleConnection: () => void;
@@ -78,7 +81,7 @@ const initialPendingItems: PendingQueueItem[] = [
 ];
 
 export const useSyncStore = create<SyncStoreState>((set, get) => ({
-  connection: 'online',
+  connection: typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'online',
   pendingEvents: initialPendingItems.length,
   lastSyncAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
   syncingNow: false,
@@ -86,6 +89,33 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
   pendingItems: initialPendingItems,
   calibrationPair: initialCalibration,
   isSyncModalOpen: false,
+  isInitialized: false,
+
+  initializeQueue: async () => {
+    if (get().isInitialized) return;
+    try {
+      const storedCalibration = await offlineQueue.getCalibration();
+      const persistedItems = await offlineQueue.getAll();
+
+      if (persistedItems.length > 0) {
+        set({
+          pendingItems: persistedItems,
+          pendingEvents: persistedItems.length,
+          calibrationPair: storedCalibration || get().calibrationPair,
+          isInitialized: true,
+        });
+      } else {
+        // Seed initial mock items to offline store so it matches UI
+        for (const item of initialPendingItems) {
+          await offlineQueue.enqueue(item);
+        }
+        await offlineQueue.saveCalibration(initialCalibration);
+        set({ isInitialized: true });
+      }
+    } catch {
+      set({ isInitialized: true });
+    }
+  },
 
   refresh: async () => {
     try {
@@ -101,11 +131,15 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   setConnection: (status: ConnectionStatus) => {
     set({ connection: status });
+    if (status === 'online' && get().pendingItems.length > 0) {
+      // Automatic auto-replay upon reconnect (FR-3.2)
+      get().syncNow().catch(() => {});
+    }
   },
 
   toggleConnection: () => {
     const next = get().connection === 'online' ? 'offline' : 'online';
-    set({ connection: next });
+    get().setConnection(next);
   },
 
   openSyncModal: () => set({ isSyncModalOpen: true }),
@@ -119,26 +153,38 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
     set({ syncingNow: true });
 
-    // Simulate network round-trip and idempotent ingestion (FR-3.3)
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    try {
+      // Simulate network round-trip and idempotent ingestion (FR-3.3)
+      await new Promise(resolve => setTimeout(resolve, 1200));
 
-    // Update Calibration Pair on successful sync (FR-4.1)
-    const newCalibration: CalibrationPair = {
-      serverWallClock: new Date().toISOString(),
-      deviceMonotonicMs: performance.now(),
-      lastCalibratedAt: new Date().toISOString(),
-    };
+      // Update Calibration Pair on successful sync (FR-4.1)
+      const newCalibration: CalibrationPair = {
+        serverWallClock: new Date().toISOString(),
+        deviceMonotonicMs: performance.now(),
+        lastCalibratedAt: new Date().toISOString(),
+      };
 
-    set({
-      syncingNow: false,
-      pendingEvents: 0,
-      pendingItems: [],
-      lastSyncAt: new Date().toISOString(),
-      calibrationPair: newCalibration,
-      failedEvents: 0,
-    });
+      // Clear local IndexedDB queue and persist updated calibration
+      await offlineQueue.clear();
+      await offlineQueue.saveCalibration(newCalibration);
 
-    return true;
+      set({
+        syncingNow: false,
+        pendingEvents: 0,
+        pendingItems: [],
+        lastSyncAt: new Date().toISOString(),
+        calibrationPair: newCalibration,
+        failedEvents: 0,
+      });
+
+      return true;
+    } catch {
+      set({
+        syncingNow: false,
+        failedEvents: get().failedEvents + 1,
+      });
+      return false;
+    }
   },
 
   addPendingItem: (item) => {
@@ -167,6 +213,9 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
       pendingItems: updated,
       pendingEvents: updated.length,
     });
+
+    // Asynchronously persist to IndexedDB
+    offlineQueue.enqueue(newItem).catch(() => {});
   },
 
   simulateClockDriftTest: (driftMinutes: number) => {
@@ -196,5 +245,19 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
       pendingItems: updated,
       pendingEvents: updated.length,
     });
+
+    offlineQueue.enqueue(newItem).catch(() => {});
   },
 }));
+
+// Setup window network connectivity listeners for automatic recovery
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    useSyncStore.getState().setConnection('online');
+  });
+
+  window.addEventListener('offline', () => {
+    useSyncStore.getState().setConnection('offline');
+  });
+}
+

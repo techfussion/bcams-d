@@ -30,6 +30,8 @@ import { AuditPage } from '@/pages/audit';
 import { SettingsPage } from '@/pages/settings';
 import { LoginPage } from '@/pages/auth/login';
 
+import { useSyncStore } from '@/stores/sync-store';
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
   const location = useLocation();
@@ -49,6 +51,9 @@ export function App() {
   const { login, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
+    // Initialize offline sync queue from persistent IndexedDB
+    useSyncStore.getState().initializeQueue().catch(() => {});
+
     // Automatically initialize authenticated session with default super admin for instant operational readiness
     if (!isAuthenticated) {
       login('user-sa');
