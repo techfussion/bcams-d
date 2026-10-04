@@ -1,14 +1,24 @@
 /**
  * BCAMS DataTable
  * 
- * Enterprise data table with search, sorting, pagination, and row actions.
+ * Enterprise data table with search, sorting, pagination, row actions,
+ * and optional multi-row selection.
  * Used across People, Sessions, Devices, Courses, etc.
  */
 import React, { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState, TableSkeleton } from '@/components/common/empty-error-states';
-import { Search, ChevronLeft, ChevronRight, ArrowUpDown, Table2 } from 'lucide-react';
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Table2,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface DataTableColumn<T> {
@@ -34,6 +44,9 @@ interface DataTableProps<T> {
   emptyAction?: { label: string; onClick: () => void };
   headerActions?: React.ReactNode;
   getRowId?: (item: T) => string;
+  selectable?: boolean;
+  selectedIds?: string[];
+  onSelectionChange?: (selectedIds: string[]) => void;
 }
 
 export function DataTable<T>({
@@ -49,35 +62,74 @@ export function DataTable<T>({
   emptyDescription = 'No records to display.',
   emptyAction,
   headerActions,
-  getRowId,
+  getRowId = (item: any) => item.id || String(item),
+  selectable = false,
+  selectedIds,
+  onSelectionChange,
 }: DataTableProps<T>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [internalSelectedIds, setInternalSelectedIds] = useState<string[]>([]);
 
-  // Filter data
+  const activeSelectedIds = selectedIds ?? internalSelectedIds;
+  const handleSelectionUpdate = (newSelected: string[]) => {
+    if (onSelectionChange) {
+      onSelectionChange(newSelected);
+    } else {
+      setInternalSelectedIds(newSelected);
+    }
+  };
+
+  // Filter data (uses custom searchFn or smart recursive string check)
   const filteredData = useMemo(() => {
-    if (!searchQuery || !searchFn) return data;
-    return data.filter(item => searchFn(item, searchQuery.toLowerCase()));
+    if (!searchQuery) return data;
+    const query = searchQuery.toLowerCase().trim();
+
+    if (searchFn) {
+      return data.filter((item) => searchFn(item, query));
+    }
+
+    // Default smart search over object properties
+    return data.filter((item) => {
+      if (typeof item === 'object' && item !== null) {
+        return Object.values(item).some((val) => {
+          if (val === null || val === undefined) return false;
+          if (typeof val === 'string' || typeof val === 'number') {
+            return String(val).toLowerCase().includes(query);
+          }
+          return false;
+        });
+      }
+      return String(item).toLowerCase().includes(query);
+    });
   }, [data, searchQuery, searchFn]);
 
   // Sort data
   const sortedData = useMemo(() => {
     if (!sortKey) return filteredData;
-    const column = columns.find(c => c.key === sortKey);
+    const column = columns.find((c) => c.key === sortKey);
     if (!column?.sortFn) return filteredData;
     const sorted = [...filteredData].sort(column.sortFn);
     return sortDirection === 'desc' ? sorted.reverse() : sorted;
   }, [filteredData, sortKey, sortDirection, columns]);
 
   // Paginate
-  const totalPages = Math.ceil(sortedData.length / pageSize);
-  const paginatedData = sortedData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+  const paginatedData = sortedData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
-      setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortKey(null);
+        setSortDirection('asc');
+      }
     } else {
       setSortKey(key);
       setSortDirection('asc');
@@ -89,101 +141,190 @@ export function DataTable<T>({
     setCurrentPage(1);
   }, [searchQuery]);
 
+  // Selection handlers
+  const allCurrentPageSelected =
+    paginatedData.length > 0 &&
+    paginatedData.every((item) => activeSelectedIds.includes(getRowId(item)));
+
+  const someCurrentPageSelected =
+    paginatedData.some((item) => activeSelectedIds.includes(getRowId(item))) &&
+    !allCurrentPageSelected;
+
+  const handleToggleSelectAll = () => {
+    if (allCurrentPageSelected) {
+      const pageIds = new Set(paginatedData.map((item) => getRowId(item)));
+      handleSelectionUpdate(activeSelectedIds.filter((id) => !pageIds.has(id)));
+    } else {
+      const newIds = new Set([
+        ...activeSelectedIds,
+        ...paginatedData.map((item) => getRowId(item)),
+      ]);
+      handleSelectionUpdate(Array.from(newIds));
+    }
+  };
+
+  const handleToggleRow = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (activeSelectedIds.includes(id)) {
+      handleSelectionUpdate(activeSelectedIds.filter((i) => i !== id));
+    } else {
+      handleSelectionUpdate([...activeSelectedIds, id]);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
-        {searchable && <div className="skeleton h-9 w-64" />}
-        <TableSkeleton rows={pageSize} cols={columns.length} />
+        {searchable && <div className="skeleton h-9 w-64 rounded-md" />}
+        <TableSkeleton rows={pageSize} cols={columns.length + (selectable ? 1 : 0)} />
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         {searchable && (
-          <div className="relative max-w-sm">
+          <div className="relative w-full sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="pl-9"
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 text-xs"
             />
           </div>
         )}
-        {headerActions && <div className="flex items-center gap-2">{headerActions}</div>}
+        <div className="flex items-center gap-2 ml-auto">
+          {selectable && activeSelectedIds.length > 0 && (
+            <span className="text-xs font-medium text-primary px-2.5 py-1 rounded bg-primary-50 border border-primary-200">
+              {activeSelectedIds.length} selected
+            </span>
+          )}
+          {headerActions}
+        </div>
       </div>
 
-      {/* Table */}
+      {/* Table Content */}
       {paginatedData.length === 0 ? (
         <EmptyState
           icon={<Table2 className="h-8 w-8 text-muted-foreground" />}
           title={searchQuery ? 'No results found' : emptyTitle}
-          description={searchQuery ? `No records match "${searchQuery}". Try a different search term.` : emptyDescription}
+          description={
+            searchQuery
+              ? `No records match "${searchQuery}". Try a different search query.`
+              : emptyDescription
+          }
           action={!searchQuery ? emptyAction : undefined}
         />
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <table className="bcams-table">
-            <thead className="bg-muted/50">
-              <tr>
-                {columns.map(col => (
-                  <th key={col.key} className={cn(col.className)}>
-                    {col.sortable ? (
-                      <button
-                        onClick={() => handleSort(col.key)}
-                        className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
-                      >
-                        {col.header}
-                        <ArrowUpDown className="h-3 w-3" />
-                      </button>
-                    ) : (
-                      col.header
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedData.map((item, index) => (
-                <tr
-                  key={getRowId ? getRowId(item) : index}
-                  onClick={() => onRowClick?.(item)}
-                  className={cn(onRowClick && 'cursor-pointer')}
-                  tabIndex={onRowClick ? 0 : undefined}
-                  onKeyDown={e => {
-                    if (onRowClick && (e.key === 'Enter' || e.key === ' ')) {
-                      e.preventDefault();
-                      onRowClick(item);
-                    }
-                  }}
-                >
-                  {columns.map(col => (
-                    <td key={col.key} className={cn(col.className)}>
-                      {col.render(item)}
-                    </td>
-                  ))}
+        <div className="rounded-lg border border-border overflow-hidden bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="bcams-table w-full">
+              <thead className="bg-muted/50 border-b border-border">
+                <tr>
+                  {selectable && (
+                    <th className="w-10 px-3 py-3 text-center">
+                      <Checkbox
+                        checked={allCurrentPageSelected}
+                        indeterminate={someCurrentPageSelected}
+                        onCheckedChange={handleToggleSelectAll}
+                        aria-label="Select all rows on current page"
+                      />
+                    </th>
+                  )}
+                  {columns.map((col) => {
+                    const isSorted = sortKey === col.key;
+                    return (
+                      <th key={col.key} className={cn('text-xs font-semibold text-muted-foreground', col.className)}>
+                        {col.sortable ? (
+                          <button
+                            onClick={() => handleSort(col.key)}
+                            className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors group focus:outline-none"
+                            type="button"
+                          >
+                            <span>{col.header}</span>
+                            {isSorted ? (
+                              sortDirection === 'asc' ? (
+                                <ArrowUp className="h-3.5 w-3.5 text-primary stroke-[2.5]" />
+                              ) : (
+                                <ArrowDown className="h-3.5 w-3.5 text-primary stroke-[2.5]" />
+                              )
+                            ) : (
+                              <ArrowUpDown className="h-3 w-3 text-muted-foreground/60 group-hover:text-muted-foreground" />
+                            )}
+                          </button>
+                        ) : (
+                          col.header
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {paginatedData.map((item, index) => {
+                  const rowId = getRowId(item) || String(index);
+                  const isSelected = activeSelectedIds.includes(rowId);
+
+                  return (
+                    <tr
+                      key={rowId}
+                      onClick={() => onRowClick?.(item)}
+                      className={cn(
+                        'transition-colors hover:bg-muted/30',
+                        onRowClick && 'cursor-pointer',
+                        isSelected && 'bg-primary-50/50 hover:bg-primary-50'
+                      )}
+                      tabIndex={onRowClick ? 0 : undefined}
+                      onKeyDown={(e) => {
+                        if (onRowClick && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          onRowClick(item);
+                        }
+                      }}
+                    >
+                      {selectable && (
+                        <td
+                          className="w-10 px-3 py-3 text-center"
+                          onClick={(e) => handleToggleRow(rowId, e)}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => {}}
+                            aria-label={`Select row ${rowId}`}
+                          />
+                        </td>
+                      )}
+                      {columns.map((col) => (
+                        <td key={col.key} className={cn('text-xs py-3', col.className)}>
+                          {col.render(item)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* Pagination */}
+      {/* Pagination Controls */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground pt-1">
           <span>
-            Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length}
+            Showing {(currentPage - 1) * pageSize + 1}–
+            {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} records
           </span>
           <div className="flex items-center gap-1">
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon-sm"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
+              aria-label="Previous Page"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -204,17 +345,18 @@ export function DataTable<T>({
                   variant={currentPage === page ? 'default' : 'ghost'}
                   size="icon-sm"
                   onClick={() => setCurrentPage(page)}
-                  className="text-xs"
+                  className="text-xs font-medium"
                 >
                   {page}
                 </Button>
               );
             })}
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon-sm"
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
+              aria-label="Next Page"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
