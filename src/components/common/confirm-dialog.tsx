@@ -16,7 +16,9 @@ interface ConfirmDialogProps {
   title: string;
   description: string;
   confirmLabel?: string;
+  confirmText?: string;
   cancelLabel?: string;
+  cancelText?: string;
   variant?: 'destructive' | 'warning' | 'default';
   onConfirm: () => void;
   isLoading?: boolean;
@@ -45,12 +47,16 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  confirmText,
+  cancelLabel,
+  cancelText,
   variant = 'destructive',
   onConfirm,
   isLoading = false,
 }: ConfirmDialogProps) {
+  const resolvedConfirmLabel = confirmText || confirmLabel || 'Confirm';
+  const resolvedCancelLabel = cancelText || cancelLabel || 'Cancel';
   const config = variantConfig[variant];
 
   return (
@@ -75,7 +81,7 @@ export function ConfirmDialog({
           <div className="flex justify-end gap-3 mt-6">
             <AlertDialog.Cancel asChild>
               <Button variant="outline" size="sm" disabled={isLoading}>
-                {cancelLabel}
+                {resolvedCancelLabel}
               </Button>
             </AlertDialog.Cancel>
             <AlertDialog.Action asChild>
@@ -88,7 +94,7 @@ export function ConfirmDialog({
                 }}
                 disabled={isLoading}
               >
-                {isLoading ? 'Processing...' : confirmLabel}
+                {isLoading ? 'Processing...' : resolvedConfirmLabel}
               </Button>
             </AlertDialog.Action>
           </div>

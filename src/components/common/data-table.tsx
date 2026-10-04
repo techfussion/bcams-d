@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+import { Pagination } from '@/components/common/pagination';
+
 export interface DataTableColumn<T> {
   key: string;
   header: string;
@@ -38,11 +40,14 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   searchFn?: (item: T, query: string) => boolean;
   pageSize?: number;
+  pageSizeOptions?: number[];
   onRowClick?: (item: T) => void;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyMessage?: string;
   emptyAction?: { label: string; onClick: () => void };
   headerActions?: React.ReactNode;
+  keyField?: string;
   getRowId?: (item: T) => string;
   selectable?: boolean;
   selectedIds?: string[];
@@ -57,18 +62,24 @@ export function DataTable<T>({
   searchPlaceholder = 'Search...',
   searchFn,
   pageSize = 10,
+  pageSizeOptions = [10, 25, 50, 100],
   onRowClick,
   emptyTitle = 'No data',
-  emptyDescription = 'No records to display.',
+  emptyDescription,
+  emptyMessage,
   emptyAction,
   headerActions,
-  getRowId = (item: any) => item.id || String(item),
+  keyField,
+  getRowId,
   selectable = false,
   selectedIds,
   onSelectionChange,
 }: DataTableProps<T>) {
+  const resolvedGetRowId = getRowId || ((item: any) => (keyField && item[keyField] ? String(item[keyField]) : item.id ? String(item.id) : String(item)));
+  const resolvedEmptyDescription = emptyMessage || emptyDescription || 'No records to display.';
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageSize, setCurrentPageSize] = useState(pageSize);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [internalSelectedIds, setInternalSelectedIds] = useState<string[]>([]);
@@ -116,10 +127,10 @@ export function DataTable<T>({
   }, [filteredData, sortKey, sortDirection, columns]);
 
   // Paginate
-  const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(sortedData.length / currentPageSize));
   const paginatedData = sortedData.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
+    (currentPage - 1) * currentPageSize,
+    currentPage * currentPageSize
   );
 
   const handleSort = (key: string) => {
@@ -144,20 +155,20 @@ export function DataTable<T>({
   // Selection handlers
   const allCurrentPageSelected =
     paginatedData.length > 0 &&
-    paginatedData.every((item) => activeSelectedIds.includes(getRowId(item)));
+    paginatedData.every((item) => activeSelectedIds.includes(resolvedGetRowId(item)));
 
   const someCurrentPageSelected =
-    paginatedData.some((item) => activeSelectedIds.includes(getRowId(item))) &&
+    paginatedData.some((item) => activeSelectedIds.includes(resolvedGetRowId(item))) &&
     !allCurrentPageSelected;
 
   const handleToggleSelectAll = () => {
     if (allCurrentPageSelected) {
-      const pageIds = new Set(paginatedData.map((item) => getRowId(item)));
+      const pageIds = new Set(paginatedData.map((item) => resolvedGetRowId(item)));
       handleSelectionUpdate(activeSelectedIds.filter((id) => !pageIds.has(id)));
     } else {
       const newIds = new Set([
         ...activeSelectedIds,
-        ...paginatedData.map((item) => getRowId(item)),
+        ...paginatedData.map((item) => resolvedGetRowId(item)),
       ]);
       handleSelectionUpdate(Array.from(newIds));
     }
@@ -214,7 +225,7 @@ export function DataTable<T>({
           description={
             searchQuery
               ? `No records match "${searchQuery}". Try a different search query.`
-              : emptyDescription
+              : resolvedEmptyDescription
           }
           action={!searchQuery ? emptyAction : undefined}
         />
@@ -265,7 +276,7 @@ export function DataTable<T>({
               </thead>
               <tbody className="divide-y divide-border">
                 {paginatedData.map((item, index) => {
-                  const rowId = getRowId(item) || String(index);
+                  const rowId = resolvedGetRowId(item) || String(index);
                   const isSelected = activeSelectedIds.includes(rowId);
 
                   return (
@@ -311,57 +322,19 @@ export function DataTable<T>({
         </div>
       )}
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground pt-1">
-          <span>
-            Showing {(currentPage - 1) * pageSize + 1}–
-            {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} records
-          </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              aria-label="Previous Page"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-              let page: number;
-              if (totalPages <= 5) {
-                page = i + 1;
-              } else if (currentPage <= 3) {
-                page = i + 1;
-              } else if (currentPage >= totalPages - 2) {
-                page = totalPages - 4 + i;
-              } else {
-                page = currentPage - 2 + i;
-              }
-              return (
-                <Button
-                  key={page}
-                  variant={currentPage === page ? 'default' : 'ghost'}
-                  size="icon-sm"
-                  onClick={() => setCurrentPage(page)}
-                  className="text-xs font-medium"
-                >
-                  {page}
-                </Button>
-              );
-            })}
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              aria-label="Next Page"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      {/* Enterprise Pagination Controls */}
+      {sortedData.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={sortedData.length}
+          pageSize={currentPageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setCurrentPageSize(newSize);
+            setCurrentPage(1);
+          }}
+          pageSizeOptions={pageSizeOptions}
+        />
       )}
     </div>
   );

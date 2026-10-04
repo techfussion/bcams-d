@@ -90,20 +90,25 @@ export function useToast() {
     return addToast({ title: titleOrOptions, description, variant, duration });
   };
 
-  return {
-    toast: toastFn,
+  const toast = Object.assign(toastFn, {
     success: (title: string, description?: string) =>
       addToast({ title, description, variant: 'success', duration: 3000 }),
-
     error: (title: string, description?: string) =>
       addToast({ title, description, variant: 'destructive', duration: 5000 }),
-
     warning: (title: string, description?: string) =>
       addToast({ title, description, variant: 'warning', duration: 4000 }),
-
     info: (title: string, description?: string) =>
       addToast({ title, description, variant: 'default', duration: 3500 }),
+    dismiss: dismissToast,
+    clearAll,
+  });
 
+  return {
+    toast,
+    success: toast.success,
+    error: toast.error,
+    warning: toast.warning,
+    info: toast.info,
     dismiss: dismissToast,
     clearAll,
   };

@@ -21,7 +21,7 @@ import type { Policy, PolicyType, PolicyScope, Department, Course } from '@/type
 import { ShieldAlert, AlertCircle } from 'lucide-react';
 
 const policySchema = z.object({
-  type: z.enum(['attendance_threshold', 'punctuality_hours', 'geofence_radius']),
+  type: z.enum(['attendance_threshold', 'session_duration', 'geofence_radius', 'biometric_enrollment', 'staff_gate_hours', 'punctuality_hours']),
   scope: z.enum(['institution', 'department', 'course']),
   thresholdPercentage: z.number().min(50).max(100).optional(),
   geofenceRadius: z.number().min(20).max(1000).optional(),
@@ -48,7 +48,7 @@ export function PolicyFormDialog({
   const [scopeId, setScopeId] = useState<string>('');
   const [threshold, setThreshold] = useState<number>(75);
   const [geofenceRadius, setGeofenceRadius] = useState<number>(200);
-  const [graceMinutes, setGraceMinutes] = useState<number>(30);
+  const [graceMinutes, setGraceMinutes] = useState<number>(60);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -63,7 +63,7 @@ export function PolicyFormDialog({
         scope,
         thresholdPercentage: type === 'attendance_threshold' ? threshold : undefined,
         geofenceRadius: type === 'geofence_radius' ? geofenceRadius : undefined,
-        graceMinutes: type === 'punctuality_hours' ? graceMinutes : undefined,
+        graceMinutes: (type === 'punctuality_hours' || type === 'staff_gate_hours') ? graceMinutes : undefined,
       });
 
       let scopeName: string | undefined;
@@ -78,10 +78,10 @@ export function PolicyFormDialog({
       let policyValue: Policy['value'] = threshold;
       if (type === 'geofence_radius') {
         policyValue = geofenceRadius;
-      } else if (type === 'punctuality_hours') {
+      } else if (type === 'punctuality_hours' || type === 'staff_gate_hours') {
         policyValue = {
-          expectedStart: '08:00',
-          expectedEnd: '16:00',
+          expectedStart: '09:00',
+          expectedEnd: '17:00',
           graceMinutes,
         };
       }
@@ -149,7 +149,9 @@ export function PolicyFormDialog({
                   <SelectContent>
                     <SelectItem value="attendance_threshold">Attendance Threshold</SelectItem>
                     <SelectItem value="geofence_radius">Geofence Radius</SelectItem>
-                    <SelectItem value="punctuality_hours">Punctuality & Grace</SelectItem>
+                    <SelectItem value="staff_gate_hours">Staff Gate Hours (9am-5pm + Grace)</SelectItem>
+                    <SelectItem value="session_duration">Session Timeout Duration</SelectItem>
+                    <SelectItem value="biometric_enrollment">Biometric Enrollment Target</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -264,7 +266,7 @@ export function PolicyFormDialog({
               </div>
             )}
 
-            {type === 'punctuality_hours' && (
+            {(type === 'punctuality_hours' || type === 'staff_gate_hours') && (
               <div>
                 <label className="font-medium text-foreground block mb-1">
                   Grace Period Window (minutes)

@@ -8,7 +8,7 @@
  */
 import type { BcamsApi } from './types';
 import type {
-  User, Department, Course, CourseOffering, Student, Lecturer, Staff,
+  User, Department, Course, CourseOffering, Student, AcademicEnrollment, Lecturer, Staff,
   Session, AttendanceEvent, ClockEvent, DailyClockRecord, Device,
   Policy, AuditEntry, FingerEnrollment, SyncState,
 } from '@/types';
@@ -169,6 +169,10 @@ export class HttpApiAdapter implements BcamsApi {
     return this.request<CourseOffering[]>(`/course-offerings${query}`);
   }
 
+  async getEligibleCoursesForStudent(studentId: string): Promise<CourseOffering[]> {
+    return this.request<CourseOffering[]>(`/students/${encodeURIComponent(studentId)}/eligible-courses`);
+  }
+
   async createCourse(course: Partial<Course>): Promise<Course> {
     return this.request<Course>('/courses', {
       method: 'POST',
@@ -193,6 +197,36 @@ export class HttpApiAdapter implements BcamsApi {
     });
   }
 
+  async updateStudent(id: string, updates: Partial<Student>): Promise<Student> {
+    return this.request<Student>(`/students/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async bulkImportStudents(records: any[]): Promise<{ importedCount: number; updatedEnrollments: number; errors: any[] }> {
+    return this.request<{ importedCount: number; updatedEnrollments: number; errors: any[] }>('/students/bulk-import', {
+      method: 'POST',
+      body: JSON.stringify({ records }),
+    });
+  }
+
+  // Academic Enrollments
+  async getAcademicEnrollments(studentId?: string, departmentId?: string): Promise<AcademicEnrollment[]> {
+    const params = new URLSearchParams();
+    if (studentId) params.append('student_id', studentId);
+    if (departmentId) params.append('department_id', departmentId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<AcademicEnrollment[]>(`/academic/enrollments${query}`);
+  }
+
+  async createAcademicEnrollment(enrollment: Partial<AcademicEnrollment>): Promise<AcademicEnrollment> {
+    return this.request<AcademicEnrollment>('/academic/enrollments', {
+      method: 'POST',
+      body: JSON.stringify(enrollment),
+    });
+  }
+
   async getLecturers(departmentId?: string): Promise<Lecturer[]> {
     const query = departmentId ? `?department_id=${encodeURIComponent(departmentId)}` : '';
     return this.request<Lecturer[]>(`/lecturers${query}`);
@@ -206,6 +240,13 @@ export class HttpApiAdapter implements BcamsApi {
     return this.request<Lecturer>('/lecturers', {
       method: 'POST',
       body: JSON.stringify(lecturer),
+    });
+  }
+
+  async linkStaffToLecturer(staffId: string, lecturerData: Partial<Lecturer>): Promise<Lecturer> {
+    return this.request<Lecturer>(`/staff/${staffId}/link-lecturer`, {
+      method: 'POST',
+      body: JSON.stringify(lecturerData),
     });
   }
 
@@ -261,6 +302,13 @@ export class HttpApiAdapter implements BcamsApi {
     });
   }
 
+  async closeSessionWithLecturer(sessionId: string, lecturerFingerprintId: string): Promise<{ success: boolean; session?: Session; error?: string }> {
+    return this.request<{ success: boolean; session?: Session; error?: string }>(`/sessions/${sessionId}/close-authorized`, {
+      method: 'POST',
+      body: JSON.stringify({ lecturer_fingerprint_id: lecturerFingerprintId }),
+    });
+  }
+
   // Attendance
   async getAttendanceEvents(sessionId: string): Promise<AttendanceEvent[]> {
     return this.request<AttendanceEvent[]>(`/sessions/${sessionId}/attendance`);
@@ -297,6 +345,16 @@ export class HttpApiAdapter implements BcamsApi {
     return this.request<DailyClockRecord[]>(`/gate/daily-records${queryString}`);
   }
 
+  async getGateRecords(filters?: { startDate?: string; endDate?: string; departmentId?: string; punctuality?: string }): Promise<DailyClockRecord[]> {
+    const params = new URLSearchParams();
+    if (filters?.startDate) params.append('start_date', filters.startDate);
+    if (filters?.endDate) params.append('end_date', filters.endDate);
+    if (filters?.departmentId) params.append('department_id', filters.departmentId);
+    if (filters?.punctuality) params.append('punctuality', filters.punctuality);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return this.request<DailyClockRecord[]>(`/gate/records${queryString}`);
+  }
+
   async recordClockEvent(event: Partial<ClockEvent>): Promise<ClockEvent> {
     return this.request<ClockEvent>('/gate/clock', {
       method: 'POST',
@@ -317,6 +375,13 @@ export class HttpApiAdapter implements BcamsApi {
     return this.request<Device>('/devices', {
       method: 'POST',
       body: JSON.stringify(device),
+    });
+  }
+
+  async updateDeviceLifecycle(id: string, state: string, notes?: string): Promise<Device> {
+    return this.request<Device>(`/devices/${id}/lifecycle`, {
+      method: 'PATCH',
+      body: JSON.stringify({ state, notes }),
     });
   }
 

@@ -26,6 +26,7 @@ import {
   Percent,
   Clock,
   MapPin,
+  Fingerprint,
   Plus,
   CheckCircle2,
   AlertCircle,
@@ -118,7 +119,13 @@ export function PoliciesPage() {
     if (policy.type === 'geofence_radius') {
       return `${policy.value} meters radius`;
     }
-    if (policy.type === 'punctuality_hours') {
+    if (policy.type === 'session_duration') {
+      return `${policy.value} minutes max timeout`;
+    }
+    if (policy.type === 'biometric_enrollment') {
+      return `${policy.value} minimum enrolled fingers`;
+    }
+    if (policy.type === 'punctuality_hours' || policy.type === 'staff_gate_hours') {
       const v = policy.value as PolicyPunctualityValue;
       return `${v.expectedStart} - ${v.expectedEnd} (${v.graceMinutes}m grace)`;
     }
@@ -132,15 +139,21 @@ export function PoliciesPage() {
       sortable: true,
       sortFn: (a, b) => a.type.localeCompare(b.type),
       render: (p) => {
-        const icons = {
+        const icons: Record<string, React.ReactNode> = {
           attendance_threshold: <Percent className="h-4 w-4 text-primary" />,
           punctuality_hours: <Clock className="h-4 w-4 text-amber-600" />,
+          staff_gate_hours: <Clock className="h-4 w-4 text-amber-600" />,
           geofence_radius: <MapPin className="h-4 w-4 text-blue-600" />,
+          session_duration: <Clock className="h-4 w-4 text-purple-600" />,
+          biometric_enrollment: <Fingerprint className="h-4 w-4 text-emerald-600" />,
         };
-        const labels = {
+        const labels: Record<string, string> = {
           attendance_threshold: 'Attendance Threshold (FR-4.1)',
-          punctuality_hours: 'Punctuality & Working Hours',
+          punctuality_hours: 'Staff Gate Working Hours & Grace Period',
+          staff_gate_hours: 'Staff Gate Working Hours & Grace Period',
           geofence_radius: 'Geofence Radius Perimeter',
+          session_duration: 'Class Session Timeout Duration',
+          biometric_enrollment: 'Biometric Minimum Fingerprint Count',
         };
         return (
           <div className="flex items-center gap-2.5">

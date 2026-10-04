@@ -1,34 +1,55 @@
 /**
- * Gate Attendance Page
+ * Staff Gate Attendance Operational Kiosk
  * 
- * FR-Gate: Campus / Faculty entrance verification for Staff and Students.
- * Handles Clock In, Clock Out, punctuality classification, and multiple-scan suppression.
+ * Dedicated operational workspace for Staff Gate Capturers.
+ * Features:
+ * - Local scanner hardware status (ready, scanning, processing)
+ * - Local workstation network & sync status
+ * - Live scan trigger & immediate biometric verification feedback
+ * - Automatic Clock-In / Clock-Out determination
+ * - Statutory Punctuality classification (9:00 AM standard, 60m grace up to 10:00 AM)
+ * - Local recent scan feed for this physical turnstile endpoint
+ * - No administrative records browsing or global data controls
  */
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { DataTable, type DataTableColumn } from '@/components/common/data-table';
-import { ScannerStatusIndicator } from '@/components/common/status-indicators';
-import { PageSkeleton } from '@/components/common/empty-error-states';
+import { ScannerStatusIndicator, ConnectionIndicator } from '@/components/common/status-indicators';
 import { api } from '@/api';
 import { scannerService } from '@/services/scanner-service';
+import { useAuthStore } from '@/stores/auth-store';
+import { useSyncStore } from '@/stores/sync-store';
 import { formatTime } from '@/lib/utils';
-import type { DailyClockRecord, ClockEvent, ScannerState, Department } from '@/types';
+import { isSuperAdmin, isGateCapturer } from '@/lib/permissions';
+import type { ScannerState, ClockEvent } from '@/types';
 import {
   DoorOpen, LogIn, LogOut, CheckCircle2, AlertTriangle,
-  Clock, ShieldCheck, Users, Fingerprint, Calendar
+  Clock, ShieldCheck, Fingerprint, RefreshCw, ExternalLink,
 } from 'lucide-react';
 
 export function GateAttendancePage() {
-  const [records, setRecords] = useState<DailyClockRecord[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [selectedDept, setSelectedDept] = useState<string>('all');
-  const [scannerState, setScannerState] = useState<ScannerState>('disconnected');
-  const [isLoading, setIsLoading] = useState(true);
-  const [simulatingScan, setSimulatingScan] = useState(false);
-  const [scanResultNotification, setScanResultNotification] = useState<string | null>(null);
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+  const { connection, pendingEvents, lastSyncAt, syncNow } = useSyncStore();
+
+  const [scannerState, setScannerState] = useState<ScannerState>('ready');
+  const [isScanning, setIsScanning] = useState(false);
+  const [lastScanResult, setLastScanResult] = useState<{
+    success: boolean;
+    staffName: string;
+    staffId: string;
+    department: string;
+    type: 'clock_in' | 'clock_out';
+    punctuality?: 'on-time' | 'late';
+    timestamp: string;
+    message: string;
+  } | null>(null);
+
+  // Local turnstile activity feed (just the scans processed on this workstation)
+  const [recentTerminalScans, setRecentTerminalScans] = useState<ClockEvent[]>([]);
 
   useEffect(() => {
     const unsub = scannerService.onStateChange(setScannerState);
@@ -36,300 +57,289 @@ export function GateAttendancePage() {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [deptList, clockRecords] = await Promise.all([
-          api.getDepartments(),
-          api.getDailyClockRecords(selectedDept === 'all' ? undefined : selectedDept),
-        ]);
-        setDepartments(deptList);
-        setRecords(clockRecords);
-      } catch (err) {
-        console.error('Failed to load gate attendance data:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadData();
-  }, [selectedDept]);
-
-  const handleSimulateGateScan = async () => {
-    if (simulatingScan) return;
-    setSimulatingScan(true);
-    setScanResultNotification(null);
+  const handleCaptureGateScan = async () => {
+    if (isScanning) return;
+    setIsScanning(true);
 
     try {
-      const result = await scannerService.simulateScan();
-      if (result.type === 'success') {
-        setScanResultNotification(`Verified: ${result.personName} - Entry Recorded via Biometrics`);
-      } else if (result.type === 'duplicate') {
-        setScanResultNotification(`Notice: ${result.personName} already clocked in. Logged as extra scan.`);
+      // Execute scanner verification
+      const scan = await scannerService.simulateScan();
+
+      if (scan.type === 'success') {
+        const now = new Date();
+        const currentHour = now.getHours();
+
+        // If afternoon/evening (>= 14:00), treat as Clock Out; otherwise Clock In
+        const eventType: 'clock_in' | 'clock_out' = currentHour >= 14 ? 'clock_out' : 'clock_in';
+
+        // 9:00 AM + 60m grace window = deadline 10:00 AM
+        const isLate = currentHour > 10 || (currentHour === 10 && now.getMinutes() > 0);
+        const punctuality = eventType === 'clock_in' ? (isLate ? 'late' : 'on-time') : undefined;
+
+        const clockEvent: ClockEvent = {
+          id: `gate-${Date.now().toString(36)}`,
+          staffId: scan.registrationNumber || 'STF/001',
+          staffName: scan.personName,
+          staffDepartment: 'University Personnel',
+          type: eventType,
+          punctuality,
+          timestamp: now.toISOString(),
+          deviceId: 'dev-gate-turnstile-01',
+          clockIntegrity: 'verified',
+          syncStatus: 'synced',
+        };
+
+        await api.recordClockEvent(clockEvent);
+
+        setLastScanResult({
+          success: true,
+          staffName: scan.personName,
+          staffId: scan.registrationNumber || 'STF/001',
+          department: 'University Personnel',
+          type: eventType,
+          punctuality,
+          timestamp: now.toISOString(),
+          message: eventType === 'clock_in'
+            ? `Clocked In • ${punctuality === 'on-time' ? 'On-Time Arrival' : 'Late Arrival'}`
+            : 'Clocked Out • Departure Confirmed',
+        });
+
+        setRecentTerminalScans(prev => [clockEvent, ...prev.slice(0, 7)]);
+      } else if (scan.type === 'duplicate') {
+        setLastScanResult({
+          success: true,
+          staffName: scan.personName,
+          staffId: 'STF/STAFF',
+          department: 'University Personnel',
+          type: 'clock_in',
+          timestamp: new Date().toISOString(),
+          message: 'Extra scan detected: Already recorded for this shift.',
+        });
       } else {
-        setScanResultNotification('Gate Scan Notice: Match confidence below institutional threshold.');
+        setLastScanResult({
+          success: false,
+          staffName: 'Unrecognized Personnel',
+          staffId: 'NO MATCH',
+          department: 'N/A',
+          type: 'clock_in',
+          timestamp: new Date().toISOString(),
+          message: 'Biometric template not found in institutional registry.',
+        });
       }
-    } catch {
-      setScanResultNotification('Scanner communication error at Gate Turnstile.');
+    } catch (err) {
+      setLastScanResult({
+        success: false,
+        staffName: 'Hardware Error',
+        staffId: 'ERR',
+        department: 'N/A',
+        type: 'clock_in',
+        timestamp: new Date().toISOString(),
+        message: 'Scanner transmission error. Please retry verification.',
+      });
     } finally {
-      setSimulatingScan(false);
-      setTimeout(() => setScanResultNotification(null), 5000);
+      setIsScanning(false);
     }
   };
 
-  if (isLoading) {
-    return <PageSkeleton />;
-  }
-
-  // Summary Metrics
-  const totalExpected = records.length;
-  const clockedInCount = records.filter(r => r.clockIn).length;
-  const onTimeCount = records.filter(r => r.clockIn?.punctuality === 'on-time').length;
-  const clockedOutCount = records.filter(r => r.clockOut).length;
-  const currentlyOnCampus = clockedInCount - clockedOutCount;
-  const punctualityRate = clockedInCount > 0 ? Math.round((onTimeCount / clockedInCount) * 100) : 0;
-
-  const columns: DataTableColumn<DailyClockRecord>[] = [
-    {
-      key: 'staffName',
-      header: 'Staff Personnel',
-      sortable: true,
-      render: (record) => (
-        <div>
-          <p className="font-medium text-foreground">{record.staffName}</p>
-          <p className="text-xs text-muted-foreground font-mono">{record.staffId}</p>
-        </div>
-      ),
-    },
-    {
-      key: 'staffDepartment',
-      header: 'Department',
-      sortable: true,
-      render: (record) => (
-        <span className="text-xs font-medium text-foreground">
-          {record.staffDepartment}
-        </span>
-      ),
-    },
-    {
-      key: 'clockIn',
-      header: 'Clock In (Entry)',
-      render: (record) => {
-        if (!record.clockIn) {
-          return (
-            <Badge variant="outline" className="text-muted-foreground border-border text-xs">
-              Not Clocked In
-            </Badge>
-          );
-        }
-        const isLate = record.clockIn.punctuality === 'late';
-        return (
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs font-semibold text-foreground flex items-center gap-1">
-              <LogIn className="h-3 w-3 text-emerald-600" />
-              {formatTime(record.clockIn.timestamp)}
-            </span>
-            <Badge
-              variant="outline"
-              className={isLate
-                ? "bg-amber-50 text-amber-700 border-amber-200 text-[10px]"
-                : "bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]"
-              }
-            >
-              {isLate ? 'Late Arrival' : 'On Time'}
-            </Badge>
-          </div>
-        );
-      },
-    },
-    {
-      key: 'clockOut',
-      header: 'Clock Out (Exit)',
-      render: (record) => {
-        if (!record.clockOut) {
-          return (
-            <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-xs gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" />
-              Currently On Campus
-            </Badge>
-          );
-        }
-        return (
-          <div className="flex items-center gap-1 font-mono text-xs text-foreground">
-            <LogOut className="h-3 w-3 text-muted-foreground" />
-            {formatTime(record.clockOut.timestamp)}
-          </div>
-        );
-      },
-    },
-    {
-      key: 'additionalScans',
-      header: 'Extra Gate Scans',
-      render: (record) => (
-        <span className="text-xs text-muted-foreground">
-          {record.additionalScans > 0 ? (
-            <span className="font-mono font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-              +{record.additionalScans} additional
-            </span>
-          ) : (
-            'None'
-          )}
-        </span>
-      ),
-    },
-    {
-      key: 'date',
-      header: 'Integrity',
-      render: (record) => (
-        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
-          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-          Hardware Verified
-        </span>
-      ),
-    },
-  ];
-
   return (
-    <div className="flex flex-col min-h-full">
+    <div className="flex flex-col h-full overflow-hidden bg-slate-50/50">
       <Header
-        title="Gate Attendance & Perimeter Verification"
-        subtitle="FR-Gate: Real-time turnstile biometric verification, daily clock records, and punctuality logs."
+        title="Gate Attendance Kiosk"
+        subtitle="Staff Gate Capturer operational workstation. Turnstile biometric entrance and exit terminal."
         actions={
           <div className="flex items-center gap-2">
+            {isSuperAdmin(user) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/gate/records')}
+                className="gap-2 text-xs border-primary/30 text-primary hover:bg-primary-50"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Administrative Gate Ledger
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
-              onClick={handleSimulateGateScan}
-              disabled={simulatingScan}
-              className="gap-2 shadow-sm"
+              onClick={() => syncNow()}
+              className="gap-2 text-xs"
             >
-              <Fingerprint className="h-4 w-4 text-primary" />
-              {simulatingScan ? 'Processing Biometrics...' : 'Test Gate Scan'}
+              <RefreshCw className="h-3.5 w-3.5" />
+              Sync Station
             </Button>
           </div>
         }
       />
 
-      <div className="flex-1 p-6 space-y-6">
-        {scanResultNotification && (
-          <div className="rounded-lg bg-primary-50 border border-primary-200 p-4 flex items-center justify-between animate-fadeIn">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary-100 rounded-md">
-                <DoorOpen className="h-5 w-5 text-primary-700" />
-              </div>
-              <p className="text-sm font-medium text-primary-900">{scanResultNotification}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                  Clocked In Today
-                </p>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-bold text-foreground">{clockedInCount}</span>
-                  <span className="text-xs text-muted-foreground">of {totalExpected} total</span>
-                </div>
-              </div>
-              <div className="h-10 w-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                <LogIn className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                  Currently On Campus
-                </p>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-bold text-foreground">{currentlyOnCampus}</span>
-                  <span className="text-xs text-emerald-600 font-medium">Active now</span>
-                </div>
-              </div>
-              <div className="h-10 w-10 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center">
-                <DoorOpen className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                  Punctuality Rate
-                </p>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-bold text-foreground">{punctualityRate}%</span>
-                  <span className="text-xs text-muted-foreground">{onTimeCount} on time</span>
-                </div>
-              </div>
-              <div className="h-10 w-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center">
-                <Clock className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                  Turnstile Scanner
-                </p>
-                <div className="mt-1">
-                  <ScannerStatusIndicator connected={scannerState !== 'disconnected'} />
-                </div>
-              </div>
-              <div className="h-10 w-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl mx-auto w-full">
+        {/* Workstation Hardware & Telemetry Bar */}
+        <div className="bg-white border border-border rounded-xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700">
                 <Fingerprint className="h-5 w-5" />
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters and Ledger */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Daily Gate Clock Records
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Perimeter attendance tracking. Same-day extra scans are logged without altering original clock times.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" />
-                <span>Today (Active Session)</span>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Turnstile Sensor</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-semibold text-foreground capitalize">{scannerState}</span>
+                </div>
               </div>
-              <select
-                value={selectedDept}
-                onChange={(e) => setSelectedDept(e.target.value)}
-                className="text-xs h-8 rounded-md border border-input bg-background px-2.5 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="all">All Departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+            </div>
+
+            <div className="h-8 w-px bg-border" />
+
+            <div>
+              <p className="text-xs text-muted-foreground font-medium">Workstation Network</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <ConnectionIndicator status={connection} />
+                <span className="text-xs font-semibold text-foreground capitalize">{connection}</span>
+              </div>
+            </div>
+
+            <div className="h-8 w-px bg-border" />
+
+            <div>
+              <p className="text-xs text-muted-foreground font-medium">Queue Synchronization</p>
+              <p className="text-xs font-semibold text-foreground mt-0.5">
+                {pendingEvents > 0 ? `${pendingEvents} pending sync` : 'All records synced'}
+              </p>
             </div>
           </div>
 
-          <DataTable
-            data={records}
-            columns={columns}
-            searchable={true}
-            searchPlaceholder="Search staff by name or staff ID..."
-            emptyTitle="No gate clock records"
-            emptyDescription="No gate clock records for today."
-          />
+          <Badge variant="outline" className="bg-slate-100 text-slate-800 border-slate-300 font-mono text-xs">
+            Endpoint: North Main Security Gate
+          </Badge>
+        </div>
+
+        {/* Central Scan Terminal Interactive Card */}
+        <Card className="border-2 border-primary/20 shadow-md overflow-hidden bg-white">
+          <CardContent className="p-8 flex flex-col items-center text-center">
+            <div className="relative mb-6">
+              <div className={`h-28 w-28 rounded-full flex items-center justify-center transition-all duration-300 ${
+                isScanning
+                  ? 'bg-primary-100 text-primary animate-pulse scale-105 shadow-lg'
+                  : 'bg-primary-50 text-primary border border-primary/20 hover:scale-105'
+              }`}>
+                <Fingerprint className="h-16 w-16" />
+              </div>
+              {isScanning && (
+                <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+              )}
+            </div>
+
+            <h2 className="text-xl font-bold text-foreground">
+              {isScanning ? 'Scanning Fingerprint...' : 'Ready for Staff Verification'}
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-md mt-1.5">
+              Ask staff member to place their enrolled index or thumb finger firmly onto the turnstile optical reader.
+            </p>
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <Button
+                size="lg"
+                onClick={handleCaptureGateScan}
+                disabled={isScanning}
+                className="gap-2.5 bg-primary hover:bg-primary-600 text-white font-semibold px-8 shadow-sm text-sm"
+              >
+                <Fingerprint className="h-5 w-5" />
+                {isScanning ? 'Processing Verification...' : 'Trigger Biometric Capture'}
+              </Button>
+            </div>
+
+            <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              <span>Working Hours: <strong>9:00 AM – 5:00 PM</strong> (60m grace period)</span>
+            </div>
+          </CardContent>
+
+          {/* Immediate Live Scan Result Banner */}
+          {lastScanResult && (
+            <div className={`border-t p-5 flex items-center justify-between ${
+              lastScanResult.success
+                ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50/90 border-rose-200 text-rose-900'
+            }`}>
+              <div className="flex items-center gap-3.5">
+                <div className={`p-2 rounded-full ${
+                  lastScanResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                }`}>
+                  {lastScanResult.success ? (
+                    lastScanResult.type === 'clock_in' ? <LogIn className="h-5 w-5" /> : <LogOut className="h-5 w-5" />
+                  ) : (
+                    <AlertTriangle className="h-5 w-5" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-base">{lastScanResult.staffName}</h3>
+                    <span className="font-mono text-xs opacity-75 font-semibold">[{lastScanResult.staffId}]</span>
+                    {lastScanResult.punctuality && (
+                      <Badge variant={lastScanResult.punctuality === 'on-time' ? 'success' : 'destructive'} className="text-[10px] uppercase font-mono">
+                        {lastScanResult.punctuality}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs mt-0.5 font-medium">{lastScanResult.message}</p>
+                </div>
+              </div>
+
+              <div className="text-right font-mono text-xs">
+                <p className="font-semibold">{formatTime(lastScanResult.timestamp)}</p>
+                <span className="text-[11px] opacity-75">Sensor Verified</span>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Local Turnstile Feed (Today's local verified scans) */}
+        <div className="bg-white border border-border rounded-xl p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              <h3 className="font-semibold text-sm text-foreground">
+                Recent Terminal Verifications (This Workstation)
+              </h3>
+            </div>
+            <span className="text-xs text-muted-foreground font-mono">
+              {recentTerminalScans.length} events logged
+            </span>
+          </div>
+
+          {recentTerminalScans.length === 0 ? (
+            <div className="text-center py-6 border border-dashed border-border rounded-lg text-xs text-muted-foreground">
+              No scans captured on this terminal yet today. Press "Trigger Biometric Capture" above to verify personnel.
+            </div>
+          ) : (
+            <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+              {recentTerminalScans.map((scan) => (
+                <div key={scan.id} className="p-3 flex items-center justify-between text-xs hover:bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-1.5 rounded-md ${scan.type === 'clock_in' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                      {scan.type === 'clock_in' ? <LogIn className="h-4 w-4" /> : <LogOut className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground">{scan.staffName}</p>
+                      <p className="text-[11px] text-muted-foreground font-mono">{scan.staffId}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {scan.punctuality && (
+                      <Badge variant={scan.punctuality === 'on-time' ? 'success' : 'destructive'} className="text-[10px] uppercase font-mono">
+                        {scan.punctuality}
+                      </Badge>
+                    )}
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {formatTime(scan.timestamp)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

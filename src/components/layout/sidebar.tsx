@@ -12,105 +12,147 @@ import {
   Building2, BookOpen, Monitor, ShieldCheck, BarChart3, ClipboardList,
   DoorOpen, Settings, LogOut, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import type { UserRole } from '@/types';
+import type { User } from '@/types';
+import {
+  isSuperAdmin, isHOD, isLecturer, isSessionCapturer, isGateCapturer,
+  canManageStudents, canManageAcademicEnrollment, canManageBiometrics,
+  canManageDevices, canManagePolicies, canViewReports, canViewAuditLog,
+} from '@/lib/permissions';
 
 interface SidebarItem {
-  label: string;
+  label: string | ((user: User | null) => string);
   path: string;
   icon: React.ReactNode;
-  roles: UserRole[];
+  visible: (user: User | null) => boolean;
 }
 
 const sidebarItems: SidebarItem[] = [
+  // 1. Dashboard (Administrative roles)
   {
     label: 'Dashboard',
     path: '/',
     icon: <LayoutDashboard className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod', 'lecturer', 'class_rep'],
+    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user),
   },
+
+  // 2. Class Sessions (Administrative oversight & Student Capturer workspace)
   {
-    label: 'Sessions',
+    label: user => (isSessionCapturer(user) ? 'Eligible Sessions' : (isLecturer(user) ? 'My Sessions' : 'Sessions')),
     path: '/sessions',
     icon: <CalendarCheck className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod', 'lecturer', 'class_rep'],
+    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user) || isSessionCapturer(user),
   },
+
+  // 3. Class Attendance Ledger (Administrative records only)
   {
-    label: 'Attendance',
+    label: 'Class Attendance',
     path: '/attendance',
     icon: <Fingerprint className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod', 'lecturer', 'class_rep'],
+    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user),
   },
+
+  // 4. Staff Gate Operational Kiosk (Staff Gate Capturer only)
   {
-    label: 'Gate Attendance',
+    label: 'Gate Terminal',
     path: '/gate',
     icon: <DoorOpen className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => isGateCapturer(user),
   },
+
+  // 5. Gate Attendance Ledger (Super Admin exclusively)
+  {
+    label: 'Gate Attendance',
+    path: '/gate/records',
+    icon: <DoorOpen className="h-[18px] w-[18px]" />,
+    visible: user => isSuperAdmin(user),
+  },
+
+  // 6. Student Registry
   {
     label: 'Students',
     path: '/people/students',
     icon: <GraduationCap className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => canManageStudents(user),
   },
+
+  // 7. Academic Enrollment (Level Progression & Course Enrollment)
+  {
+    label: 'Academic Enrollment',
+    path: '/academic/enrollment',
+    icon: <GraduationCap className="h-[18px] w-[18px]" />,
+    visible: user => canManageAcademicEnrollment(user),
+  },
+
+  // 8. Lecturers
   {
     label: 'Lecturers',
     path: '/people/lecturers',
     icon: <Users className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => isSuperAdmin(user) || isHOD(user),
   },
+
+  // 9. Staff Management (Super Admin ONLY)
   {
-    label: 'Staff',
+    label: 'Staff Registry',
     path: '/people/staff',
     icon: <Users className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => isSuperAdmin(user),
   },
+
+  // 10. Biometric Enrollment
   {
-    label: 'Enrollment',
+    label: 'Biometric Enrollment',
     path: '/enrollment',
     icon: <Fingerprint className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => canManageBiometrics(user),
   },
+
+  // 11. Departments / Academic Units
   {
     label: 'Departments',
     path: '/academic/departments',
     icon: <Building2 className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => isSuperAdmin(user) || isHOD(user),
   },
+
+  // 12. Courses / Curriculum
   {
-    label: 'Courses',
+    label: user => (isLecturer(user) ? 'My Courses' : 'Courses'),
     path: '/academic/courses',
     icon: <BookOpen className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user),
   },
+
+  // 13. Trusted Physical Capture Endpoints (Super Admin ONLY)
   {
-    label: 'Devices',
+    label: 'Trusted Devices',
     path: '/devices',
     icon: <Monitor className="h-[18px] w-[18px]" />,
-    roles: ['super_admin'],
+    visible: user => canManageDevices(user),
   },
+
+  // 14. Institutional Operational Policies (Super Admin ONLY)
   {
     label: 'Policies',
     path: '/policies',
     icon: <ShieldCheck className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod'],
+    visible: user => canManagePolicies(user),
   },
+
+  // 15. Reports & Clearance Rosters
   {
     label: 'Reports',
     path: '/reports',
     icon: <BarChart3 className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod', 'lecturer'],
+    visible: user => canViewReports(user),
   },
+
+  // 16. Audit Log (Super Admin ONLY)
   {
     label: 'Audit Log',
     path: '/audit',
     icon: <ClipboardList className="h-[18px] w-[18px]" />,
-    roles: ['super_admin'],
-  },
-  {
-    label: 'Settings',
-    path: '/settings',
-    icon: <Settings className="h-[18px] w-[18px]" />,
-    roles: ['super_admin', 'hod', 'lecturer', 'class_rep'],
+    visible: user => canViewAuditLog(user),
   },
 ];
 
@@ -119,9 +161,7 @@ export function Sidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = React.useState(false);
 
-  const visibleItems = sidebarItems.filter(
-    item => user && item.roles.includes(user.role)
-  );
+  const visibleItems = sidebarItems.filter(item => item.visible(user));
 
   return (
     <aside
@@ -149,6 +189,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-2 px-2">
         <ul className="space-y-0.5">
           {visibleItems.map(item => {
+            const label = typeof item.label === 'function' ? item.label(user) : item.label;
             const isActive = location.pathname === item.path || 
               (item.path !== '/' && location.pathname.startsWith(item.path));
             return (
@@ -162,10 +203,10 @@ export function Sidebar() {
                       : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                     collapsed && 'justify-center px-2'
                   )}
-                  title={collapsed ? item.label : undefined}
+                  title={collapsed ? label : undefined}
                 >
                   <span className={cn(isActive && 'text-primary')}>{item.icon}</span>
-                  {!collapsed && <span>{item.label}</span>}
+                  {!collapsed && <span>{label}</span>}
                 </NavLink>
               </li>
             );
@@ -195,8 +236,12 @@ export function Sidebar() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user.fullName}</p>
-                <p className="text-[11px] text-muted-foreground capitalize">
-                  {user.role.replace('_', ' ')}
+                <p className="text-[11px] text-muted-foreground">
+                  {user.captureCapability === 'session_capture'
+                    ? 'Student • Session Capturer'
+                    : user.captureCapability === 'gate_capture'
+                    ? 'Staff • Gate Capturer'
+                    : user.role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                 </p>
               </div>
               <button

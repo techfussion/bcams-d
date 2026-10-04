@@ -27,6 +27,7 @@ import {
 
 interface RoleProfile {
   role: UserRole;
+  capability?: 'session_capture' | 'gate_capture' | null;
   userId: string;
   name: string;
   title: string;
@@ -44,7 +45,7 @@ const roleProfiles: RoleProfile[] = [
     name: 'Dr. Adebayo Ogundimu',
     title: 'Director of Academic Affairs',
     badge: 'Super Admin',
-    description: 'Full system access — devices, policies, audit, and all departments',
+    description: 'Institution-wide scope — devices, policies, audit, all departments, and gate ledger oversight',
     icon: <ShieldCheck className="h-5 w-5" />,
     iconBg: 'bg-purple-50',
     iconColor: 'text-purple-600',
@@ -55,7 +56,7 @@ const roleProfiles: RoleProfile[] = [
     name: 'Prof. Chidinma Okafor',
     title: 'Head of Department — Computer Science',
     badge: 'HOD',
-    description: 'Department-scoped management with enrollment and policy rights',
+    description: 'Department scope — students, lecturers, academic enrollment, and courses (no staff or gate access)',
     icon: <Building2 className="h-5 w-5" />,
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
@@ -66,21 +67,34 @@ const roleProfiles: RoleProfile[] = [
     name: 'Dr. Emeka Nwosu',
     title: 'Senior Lecturer — CSC 201 & CSC 301',
     badge: 'Lecturer',
-    description: 'Session authorization, attendance capture, and course reports',
+    description: 'Course scope — biometric session authorization and assigned course reports',
     icon: <Users className="h-5 w-5" />,
     iconBg: 'bg-emerald-50',
     iconColor: 'text-emerald-600',
   },
   {
-    role: 'class_rep',
-    userId: 'user-cr',
+    role: 'student',
+    capability: 'session_capture',
+    userId: 'user-stu-capturer',
     name: 'Amina Ibrahim',
-    title: 'Class Representative — CSC 201',
-    badge: 'Class Rep',
-    description: 'Delegated attendance capture for assigned course sessions',
+    title: 'Student + Session Capturer',
+    badge: 'Session Capturer',
+    description: 'Operational scope — creates sessions for eligible courses, operates scanner, self-attendance',
     icon: <GraduationCap className="h-5 w-5" />,
     iconBg: 'bg-amber-50',
     iconColor: 'text-amber-600',
+  },
+  {
+    role: 'staff',
+    capability: 'gate_capture',
+    userId: 'user-staff-capturer',
+    name: 'Mr. Tunde Afolabi',
+    title: 'Staff + Gate Capturer',
+    badge: 'Gate Capturer',
+    description: 'Operational scope — operates gate scanner for staff clock-in/out (9am-5pm + 60m grace)',
+    icon: <Monitor className="h-5 w-5" />,
+    iconBg: 'bg-teal-50',
+    iconColor: 'text-teal-600',
   },
 ];
 

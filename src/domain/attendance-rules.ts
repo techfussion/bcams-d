@@ -93,7 +93,7 @@ export function classifyPunctuality(
   policies: Policy[]
 ): PunctualityClassification {
   const punctualityPolicy = policies
-    .filter(p => p.type === 'punctuality_hours' && p.isActive)
+    .filter(p => (p.type === 'punctuality_hours' || p.type === 'staff_gate_hours') && p.isActive)
     .sort((a, b) => {
       const scopeOrder: Record<string, number> = { course: 0, department: 1, institution: 2 };
       return (scopeOrder[a.scope] ?? 3) - (scopeOrder[b.scope] ?? 3);
