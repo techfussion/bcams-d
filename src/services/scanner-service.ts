@@ -2,8 +2,10 @@
  * Scanner Service Abstraction
  * 
  * Pluggable interface for fingerprint scanner hardware.
- * Currently uses a mock implementation. Transport (USB/Bluetooth)
- * is abstracted — the UI doesn't care about the physical connection.
+ * Interacts with native Electron IPC when running in Electron desktop app,
+ * and gracefully falls back to mock scanner when running in web browser or mock mode.
+ * 
+ * Transport (USB/Bluetooth) is abstracted.
  * 
  * Scanner Interface
  *       │
@@ -12,27 +14,37 @@
  * USB  Bluetooth  Mock
  */
 import type { ScannerState, CaptureResult, DeviceTransport } from '@/types';
+import {
+  isElectron,
+  connectNativeScanner,
+  disconnectNativeScanner,
+  startNativeScannerCapture,
+  getNativeScannerStatus,
+  setNativeScannerTransport,
+} from './electron-service';
 
 export interface ScannerService {
   getState(): ScannerState;
   getTransport(): DeviceTransport;
-  connect(): Promise<boolean>;
+  setTransport(transport: DeviceTransport): void;
+  getModel(): string;
+  connect(transport?: DeviceTransport): Promise<boolean>;
   disconnect(): void;
   startCapture(): Promise<CaptureResult>;
   simulateScan(): Promise<CaptureResult>;
   onStateChange(callback: (state: ScannerState) => void): () => void;
 }
 
-// ─── Mock Scanner Implementation ────────────────────────────────────────────
-
 type StateChangeCallback = (state: ScannerState) => void;
 
-class MockScannerService implements ScannerService {
+class HybridScannerService implements ScannerService {
   private state: ScannerState = 'disconnected';
+  private transport: DeviceTransport = 'usb';
+  private model: string = 'SecuGen Hamster Pro 20';
   private listeners: Set<StateChangeCallback> = new Set();
   private captureCount = 0;
 
-  // Simulated capture results that cycle through different outcomes
+  // Mock capture results for web fallback
   private readonly mockResults: CaptureResult[] = [
     { type: 'success', personId: 'stu-001', personName: 'Oluwaseun Adeyemi', timestamp: new Date().toISOString() },
     { type: 'success', personId: 'stu-002', personName: 'Ngozi Chukwuma', timestamp: new Date().toISOString() },
@@ -49,7 +61,18 @@ class MockScannerService implements ScannerService {
   }
 
   getTransport(): DeviceTransport {
-    return 'usb';
+    return this.transport;
+  }
+
+  setTransport(transport: DeviceTransport) {
+    this.transport = transport;
+    if (isElectron()) {
+      setNativeScannerTransport(transport).catch(() => {});
+    }
+  }
+
+  getModel(): string {
+    return this.model;
   }
 
   private setState(newState: ScannerState) {
@@ -57,12 +80,33 @@ class MockScannerService implements ScannerService {
     this.listeners.forEach(cb => cb(newState));
   }
 
-  async connect(): Promise<boolean> {
+  async connect(transport?: DeviceTransport): Promise<boolean> {
+    if (transport) {
+      this.transport = transport;
+    }
+
+    if (isElectron()) {
+      try {
+        const success = await connectNativeScanner(this.transport);
+        if (success) {
+          const status = await getNativeScannerStatus();
+          this.model = status.model || this.model;
+          this.setState('ready');
+          return true;
+        }
+      } catch {
+        // Fall back to mock
+      }
+    }
+
     this.setState('ready');
     return true;
   }
 
   disconnect(): void {
+    if (isElectron()) {
+      disconnectNativeScanner().catch(() => {});
+    }
     this.setState('disconnected');
   }
 
@@ -72,23 +116,30 @@ class MockScannerService implements ScannerService {
     }
 
     this.setState('scanning');
-    
-    // Simulate scanning delay
+
+    // If running in native Electron, delegate to native IPC bridge
+    if (isElectron()) {
+      try {
+        const nativeResult = await startNativeScannerCapture();
+        if (nativeResult) {
+          this.setState('ready');
+          return nativeResult;
+        }
+      } catch (err) {
+        // Fall back to web mock flow below if IPC failed
+      }
+    }
+
+    // Web simulation flow
     await new Promise(resolve => setTimeout(resolve, 800));
-    
     this.setState('processing');
-    
-    // Simulate processing delay
     await new Promise(resolve => setTimeout(resolve, 600));
-    
+
     const result = this.mockResults[this.captureCount % this.mockResults.length];
     this.captureCount++;
-    
-    // Update timestamp to current
+
     const timestampedResult = { ...result, timestamp: new Date().toISOString() };
-    
     this.setState('ready');
-    
     return timestampedResult;
   }
 
@@ -105,4 +156,4 @@ class MockScannerService implements ScannerService {
 }
 
 // Export singleton instance
-export const scannerService: ScannerService = new MockScannerService();
+export const scannerService: ScannerService = new HybridScannerService();
