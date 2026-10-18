@@ -52,7 +52,7 @@ export function SyncCenterModal() {
                 Sync & Clock Integrity Center
               </h2>
               <p className="text-xs text-muted-foreground">
-                FR-3 Offline Sync Engine & FR-4 Monotonic-Clock Cross-Check
+                Offline Sync Engine & Monotonic-Clock Cross-Check
               </p>
             </div>
           </div>
@@ -133,7 +133,7 @@ export function SyncCenterModal() {
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-primary" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-primary-950">
-                  FR-4 Monotonic Calibration Anchor
+                  Monotonic Calibration Anchor
                 </h3>
               </div>
               <Badge variant="outline" className="text-[10px] border-primary-300 text-primary-800 bg-white">
@@ -188,7 +188,7 @@ export function SyncCenterModal() {
                 Offline Event Queue ({pendingItems.length})
               </h3>
               <span className="text-[11px] text-muted-foreground">
-                Idempotent Ingestion on Event ID (FR-3.3)
+                Idempotent Ingestion on Event ID
               </span>
             </div>
 

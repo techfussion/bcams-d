@@ -79,7 +79,7 @@ export function HandDiagram({
         )}
         title={
           enrolled
-            ? `${FINGER_LABELS[pos]}: Enrolled (${item?.quality}% quality). Click to re-scan.`
+            ? `${FINGER_LABELS[pos]}: Enrolled. Click to re-scan.`
             : `${FINGER_LABELS[pos]}: Not enrolled. Click to capture.`
         }
       >
@@ -93,8 +93,8 @@ export function HandDiagram({
           )}
         />
         {enrolled ? (
-          <span className="text-[10px] font-mono text-emerald-700 font-bold">
-            {item?.quality}%
+          <span className="text-[10px] text-emerald-700 font-bold">
+            Enrolled
           </span>
         ) : (
           <span className="text-[9px] text-muted-foreground uppercase font-medium">

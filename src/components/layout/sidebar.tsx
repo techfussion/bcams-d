@@ -9,14 +9,14 @@ import { useAuthStore } from '@/stores/auth-store';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, CalendarCheck, Fingerprint, Users, GraduationCap,
-  Building2, BookOpen, Monitor, ShieldCheck, BarChart3, ClipboardList,
+  Building2, BookOpen, ShieldCheck, BarChart3,
   DoorOpen, Settings, LogOut, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import type { User } from '@/types';
 import {
-  isSuperAdmin, isHOD, isLecturer, isSessionCapturer, isGateCapturer,
-  canManageStudents, canManageAcademicEnrollment, canManageBiometrics,
-  canManageDevices, canManagePolicies, canViewReports, canViewAuditLog,
+  isSuperAdmin, isHOD, isLecturer, isSessionCapturer,
+  canManageStudents, canManageBiometrics,
+  canManagePolicies, canViewReports,
 } from '@/lib/permissions';
 
 interface SidebarItem {
@@ -27,44 +27,36 @@ interface SidebarItem {
 }
 
 const sidebarItems: SidebarItem[] = [
-  // 1. Dashboard (Administrative roles)
+  // 1. Dashboard (Administrative roles only - Capturers do not get general dashboard)
   {
     label: 'Dashboard',
     path: '/',
     icon: <LayoutDashboard className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user),
+    visible: user => (isSuperAdmin(user) || isHOD(user) || isLecturer(user)) && !isSessionCapturer(user),
   },
 
-  // 2. Class Sessions (Administrative oversight & Student Capturer workspace)
+  // 1b. Session Capture Workspace (Student Session Capturer exclusive operational workspace)
   {
-    label: user => (isSessionCapturer(user) ? 'Eligible Sessions' : (isLecturer(user) ? 'My Sessions' : 'Sessions')),
+    label: 'Session Capture',
+    path: '/attendance/capture',
+    icon: <Fingerprint className="h-[18px] w-[18px]" />,
+    visible: user => isSessionCapturer(user),
+  },
+
+  // 2. Class Sessions (Administrative oversight)
+  {
+    label: user => (isLecturer(user) ? 'My Sessions' : 'Sessions'),
     path: '/sessions',
     icon: <CalendarCheck className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user) || isSessionCapturer(user),
+    visible: user => (isSuperAdmin(user) || isHOD(user) || isLecturer(user)) && !isSessionCapturer(user),
   },
 
-  // 3. Class Attendance Ledger (Administrative records only)
-  {
-    label: 'Class Attendance',
-    path: '/attendance',
-    icon: <Fingerprint className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user),
-  },
-
-  // 4. Staff Gate Operational Kiosk (Staff Gate Capturer only)
-  {
-    label: 'Gate Terminal',
-    path: '/gate',
-    icon: <DoorOpen className="h-[18px] w-[18px]" />,
-    visible: user => isGateCapturer(user),
-  },
-
-  // 5. Gate Attendance Ledger (Super Admin exclusively)
+  // 3. Gate Attendance Ledger (Super Admin ONLY)
   {
     label: 'Gate Attendance',
     path: '/gate/records',
     icon: <DoorOpen className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user),
+    visible: user => isSuperAdmin(user) && !isSessionCapturer(user),
   },
 
   // 6. Student Registry
@@ -72,15 +64,7 @@ const sidebarItems: SidebarItem[] = [
     label: 'Students',
     path: '/people/students',
     icon: <GraduationCap className="h-[18px] w-[18px]" />,
-    visible: user => canManageStudents(user),
-  },
-
-  // 7. Academic Enrollment (Level Progression & Course Enrollment)
-  {
-    label: 'Academic Enrollment',
-    path: '/academic/enrollment',
-    icon: <GraduationCap className="h-[18px] w-[18px]" />,
-    visible: user => canManageAcademicEnrollment(user),
+    visible: user => canManageStudents(user) && !isSessionCapturer(user),
   },
 
   // 8. Lecturers
@@ -88,31 +72,31 @@ const sidebarItems: SidebarItem[] = [
     label: 'Lecturers',
     path: '/people/lecturers',
     icon: <Users className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user) || isHOD(user),
+    visible: user => (isSuperAdmin(user) || isHOD(user)) && !isSessionCapturer(user),
   },
 
-  // 9. Staff Management (Super Admin ONLY)
+  // 9. Staff Management (Super Admin & HOD department-scoped)
   {
     label: 'Staff Registry',
     path: '/people/staff',
     icon: <Users className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user),
+    visible: user => (isSuperAdmin(user) || isHOD(user)) && !isSessionCapturer(user),
   },
 
-  // 10. Biometric Enrollment
+  // 10. Biometric Enrollment (Super Admin & HOD)
   {
     label: 'Biometric Enrollment',
     path: '/enrollment',
     icon: <Fingerprint className="h-[18px] w-[18px]" />,
-    visible: user => canManageBiometrics(user),
+    visible: user => canManageBiometrics(user) && !isSessionCapturer(user),
   },
 
-  // 11. Departments / Academic Units
+  // 11. Academia (Super Admin ONLY — Consolidates Departments, HODs, Policies, Capturers, Sessions & Progression)
   {
-    label: 'Departments',
-    path: '/academic/departments',
+    label: 'Academia',
+    path: '/academic/academia',
     icon: <Building2 className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user) || isHOD(user),
+    visible: user => isSuperAdmin(user) && !isSessionCapturer(user),
   },
 
   // 12. Courses / Curriculum
@@ -120,23 +104,7 @@ const sidebarItems: SidebarItem[] = [
     label: user => (isLecturer(user) ? 'My Courses' : 'Courses'),
     path: '/academic/courses',
     icon: <BookOpen className="h-[18px] w-[18px]" />,
-    visible: user => isSuperAdmin(user) || isHOD(user) || isLecturer(user),
-  },
-
-  // 13. Trusted Physical Capture Endpoints (Super Admin ONLY)
-  {
-    label: 'Trusted Devices',
-    path: '/devices',
-    icon: <Monitor className="h-[18px] w-[18px]" />,
-    visible: user => canManageDevices(user),
-  },
-
-  // 14. Institutional Operational Policies (Super Admin ONLY)
-  {
-    label: 'Policies',
-    path: '/policies',
-    icon: <ShieldCheck className="h-[18px] w-[18px]" />,
-    visible: user => canManagePolicies(user),
+    visible: user => (isSuperAdmin(user) || isHOD(user) || isLecturer(user)) && !isSessionCapturer(user),
   },
 
   // 15. Reports & Clearance Rosters
@@ -144,15 +112,7 @@ const sidebarItems: SidebarItem[] = [
     label: 'Reports',
     path: '/reports',
     icon: <BarChart3 className="h-[18px] w-[18px]" />,
-    visible: user => canViewReports(user),
-  },
-
-  // 16. Audit Log (Super Admin ONLY)
-  {
-    label: 'Audit Log',
-    path: '/audit',
-    icon: <ClipboardList className="h-[18px] w-[18px]" />,
-    visible: user => canViewAuditLog(user),
+    visible: user => canViewReports(user) && !isSessionCapturer(user),
   },
 ];
 
@@ -190,7 +150,7 @@ export function Sidebar() {
         <ul className="space-y-0.5">
           {visibleItems.map(item => {
             const label = typeof item.label === 'function' ? item.label(user) : item.label;
-            const isActive = location.pathname === item.path || 
+            const isActive = location.pathname === item.path ||
               (item.path !== '/' && location.pathname.startsWith(item.path));
             return (
               <li key={item.path}>
@@ -239,8 +199,6 @@ export function Sidebar() {
                 <p className="text-[11px] text-muted-foreground">
                   {user.captureCapability === 'session_capture'
                     ? 'Student • Session Capturer'
-                    : user.captureCapability === 'gate_capture'
-                    ? 'Staff • Gate Capturer'
                     : user.role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                 </p>
               </div>

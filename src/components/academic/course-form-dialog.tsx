@@ -107,9 +107,6 @@ export function CourseFormDialog({
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary-50 text-primary flex items-center justify-center">
-                <BookOpen className="h-4 w-4" />
-              </div>
               <div>
                 <DialogTitle>Add New Course</DialogTitle>
                 <DialogDescription className="text-xs">

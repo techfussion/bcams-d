@@ -11,8 +11,8 @@ import { useSyncStore } from '@/stores/sync-store';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, CalendarCheck, Fingerprint, Users, GraduationCap,
-  Building2, BookOpen, Monitor, ShieldCheck, BarChart3, ClipboardList,
-  DoorOpen, Settings, Search, RefreshCw, Wifi, WifiOff,
+  Building2, BookOpen, ShieldCheck, BarChart3,
+  DoorOpen, Search, RefreshCw, Wifi,
   ArrowRight,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
@@ -42,19 +42,14 @@ export function CommandPalette() {
     // Navigation
     { id: 'nav-dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" />, action: () => navigate('/'), category: 'navigation', roles: ['super_admin', 'hod', 'lecturer', 'student', 'staff'], keywords: ['home', 'overview', 'stats'] },
     { id: 'nav-sessions', label: 'Sessions', icon: <CalendarCheck className="h-4 w-4" />, action: () => navigate('/sessions'), category: 'navigation', roles: ['super_admin', 'hod', 'lecturer', 'student'], keywords: ['class', 'schedule', 'timetable'] },
-    { id: 'nav-attendance', label: 'Attendance', icon: <Fingerprint className="h-4 w-4" />, action: () => navigate('/attendance'), category: 'navigation', roles: ['super_admin', 'hod', 'lecturer'], keywords: ['records', 'events', 'ledger'] },
-    { id: 'nav-gate', label: 'Gate Attendance', icon: <DoorOpen className="h-4 w-4" />, action: () => navigate('/gate'), category: 'navigation', roles: ['super_admin', 'staff'], keywords: ['clock', 'entry', 'exit', 'gate'] },
+    { id: 'nav-gate-records', label: 'Gate Attendance Records', icon: <DoorOpen className="h-4 w-4" />, action: () => navigate('/gate/records'), category: 'navigation', roles: ['super_admin'], keywords: ['clock', 'entry', 'exit', 'gate', 'attendance', 'records', 'ledger'] },
     { id: 'nav-students', label: 'Students', icon: <GraduationCap className="h-4 w-4" />, action: () => navigate('/people/students'), category: 'navigation', roles: ['super_admin', 'hod'], keywords: ['people', 'registry', 'matric'] },
-    { id: 'nav-enrollment-mgmt', label: 'Academic Enrollment', icon: <GraduationCap className="h-4 w-4" />, action: () => navigate('/academic/enrollment'), category: 'navigation', roles: ['super_admin', 'hod'], keywords: ['progression', 'level', 'courses', 'session'] },
     { id: 'nav-lecturers', label: 'Lecturers', icon: <Users className="h-4 w-4" />, action: () => navigate('/people/lecturers'), category: 'navigation', roles: ['super_admin', 'hod'], keywords: ['people', 'faculty', 'instructor'] },
     { id: 'nav-staff', label: 'Staff Management', icon: <Users className="h-4 w-4" />, action: () => navigate('/people/staff'), category: 'navigation', roles: ['super_admin'], keywords: ['people', 'employee', 'personnel', 'registry'] },
     { id: 'nav-enrollment', label: 'Biometric Enrollment', icon: <Fingerprint className="h-4 w-4" />, action: () => navigate('/enrollment'), category: 'navigation', roles: ['super_admin', 'hod'], keywords: ['biometric', 'finger', 'register'] },
-    { id: 'nav-departments', label: 'Departments', icon: <Building2 className="h-4 w-4" />, action: () => navigate('/academic/departments'), category: 'navigation', roles: ['super_admin', 'hod'], keywords: ['faculty', 'academic', 'structure'] },
+    { id: 'nav-academia', label: 'Academia', icon: <Building2 className="h-4 w-4" />, action: () => navigate('/academic/academia'), category: 'navigation', roles: ['super_admin'], keywords: ['academia', 'departments', 'hod', 'policies', 'threshold', 'geofence', 'sessions', 'progression', 'capturers'] },
     { id: 'nav-courses', label: 'Courses', icon: <BookOpen className="h-4 w-4" />, action: () => navigate('/academic/courses'), category: 'navigation', roles: ['super_admin', 'hod'], keywords: ['module', 'subject', 'academic'] },
-    { id: 'nav-devices', label: 'Trusted Devices', icon: <Monitor className="h-4 w-4" />, action: () => navigate('/devices'), category: 'navigation', roles: ['super_admin'], keywords: ['scanner', 'hardware', 'endpoint', 'terminal'] },
-    { id: 'nav-policies', label: 'Institutional Policies', icon: <ShieldCheck className="h-4 w-4" />, action: () => navigate('/policies'), category: 'navigation', roles: ['super_admin'], keywords: ['rules', 'threshold', 'geofence', 'grace'] },
     { id: 'nav-reports', label: 'Reports', icon: <BarChart3 className="h-4 w-4" />, action: () => navigate('/reports'), category: 'navigation', roles: ['super_admin', 'hod', 'lecturer'], keywords: ['analytics', 'export', 'clearance', 'roster'] },
-    { id: 'nav-audit', label: 'Audit Log', icon: <ClipboardList className="h-4 w-4" />, action: () => navigate('/audit'), category: 'navigation', roles: ['super_admin'], keywords: ['trail', 'history', 'actions'] },
     // Actions
     { id: 'act-sync', label: 'Sync Now', description: 'Push all pending events to server', icon: <RefreshCw className="h-4 w-4" />, action: () => syncNow(), category: 'action', roles: ['super_admin', 'hod', 'lecturer', 'student', 'staff'], keywords: ['upload', 'push', 'network'] },
     { id: 'act-toggle-conn', label: 'Toggle Connection', description: 'Simulate online/offline state', icon: <Wifi className="h-4 w-4" />, action: () => toggleConnection(), category: 'action', roles: ['super_admin', 'hod', 'lecturer', 'student', 'staff'], keywords: ['network', 'offline', 'online'] },

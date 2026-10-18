@@ -11,6 +11,7 @@ import type {
   User, Department, Course, CourseOffering, Student, AcademicEnrollment, Lecturer, Staff,
   Session, AttendanceEvent, ClockEvent, DailyClockRecord, Device,
   Policy, AuditEntry, FingerEnrollment, SyncState,
+  AcademicSession, BulkProgressionPreview, BulkProgressionResult,
 } from '@/types';
 
 export class ApiError extends Error {
@@ -32,7 +33,7 @@ export class HttpApiAdapter implements BcamsApi {
   constructor(baseUrl?: string) {
     const rawUrl = baseUrl || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'http://localhost:8000/api/v1';
     this.baseUrl = rawUrl.replace(/\/$/, '');
-    
+
     // Check localStorage for persisted token if in browser/electron
     if (typeof window !== 'undefined' && window.localStorage) {
       this.token = window.localStorage.getItem('bcams_auth_token');
@@ -138,8 +139,14 @@ export class HttpApiAdapter implements BcamsApi {
   }
 
   // Dashboard
-  async getDashboardStats(): Promise<Record<string, number>> {
-    return this.request<Record<string, number>>('/dashboard/stats');
+  async getDashboardStats(scope?: { departmentId?: string; isInstitutionWide?: boolean; lecturerId?: string; academicSession?: string }): Promise<Record<string, any>> {
+    const params = new URLSearchParams();
+    if (scope?.departmentId) params.append('department_id', scope.departmentId);
+    if (scope?.lecturerId) params.append('lecturer_id', scope.lecturerId);
+    if (scope?.isInstitutionWide) params.append('institution_wide', 'true');
+    if (scope?.academicSession) params.append('academic_session', scope.academicSession);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<Record<string, any>>(`/dashboard/stats${query}`);
   }
 
   // Departments
@@ -158,14 +165,27 @@ export class HttpApiAdapter implements BcamsApi {
     });
   }
 
+  async updateDepartment(id: string, updates: Partial<Department>): Promise<Department> {
+    return this.request<Department>(`/departments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
   // Courses
-  async getCourses(departmentId?: string): Promise<Course[]> {
-    const query = departmentId ? `?department_id=${encodeURIComponent(departmentId)}` : '';
+  async getCourses(departmentId?: string, lecturerId?: string): Promise<Course[]> {
+    const params = new URLSearchParams();
+    if (departmentId) params.append('department_id', departmentId);
+    if (lecturerId) params.append('lecturer_id', lecturerId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<Course[]>(`/courses${query}`);
   }
 
-  async getCourseOfferings(departmentId?: string): Promise<CourseOffering[]> {
-    const query = departmentId ? `?department_id=${encodeURIComponent(departmentId)}` : '';
+  async getCourseOfferings(departmentId?: string, lecturerId?: string): Promise<CourseOffering[]> {
+    const params = new URLSearchParams();
+    if (departmentId) params.append('department_id', departmentId);
+    if (lecturerId) params.append('lecturer_id', lecturerId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<CourseOffering[]>(`/course-offerings${query}`);
   }
 
@@ -177,6 +197,35 @@ export class HttpApiAdapter implements BcamsApi {
     return this.request<Course>('/courses', {
       method: 'POST',
       body: JSON.stringify(course),
+    });
+  }
+
+  async updateCourse(id: string, updates: Partial<Course>): Promise<Course> {
+    return this.request<Course>(`/courses/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async bulkImportCourses(records: any[]): Promise<{ importedCount: number; errors: any[] }> {
+    return this.request<{ importedCount: number; errors: any[] }>('/courses/bulk-import', {
+      method: 'POST',
+      body: JSON.stringify({ records }),
+    });
+  }
+
+  async assignLecturerToCourse(
+    courseId: string,
+    lecturerIdOrPayload: string | { primaryLecturerId?: string; primaryLecturerName?: string; substituteLecturerId?: string; substituteLecturerName?: string },
+    isPrimary?: boolean,
+    isSubstitute?: boolean
+  ): Promise<Course> {
+    const payload = typeof lecturerIdOrPayload === 'string'
+      ? { lecturer_id: lecturerIdOrPayload, is_primary: isPrimary, is_substitute: isSubstitute }
+      : lecturerIdOrPayload;
+    return this.request<Course>(`/courses/${courseId}/assign-lecturer`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
@@ -211,6 +260,13 @@ export class HttpApiAdapter implements BcamsApi {
     });
   }
 
+  async assignSessionCapturer(studentId: string, assign: boolean): Promise<{ student: Student; user?: User }> {
+    return this.request<{ student: Student; user?: User }>(`/students/${encodeURIComponent(studentId)}/session-capturer`, {
+      method: 'POST',
+      body: JSON.stringify({ assign }),
+    });
+  }
+
   // Academic Enrollments
   async getAcademicEnrollments(studentId?: string, departmentId?: string): Promise<AcademicEnrollment[]> {
     const params = new URLSearchParams();
@@ -224,6 +280,53 @@ export class HttpApiAdapter implements BcamsApi {
     return this.request<AcademicEnrollment>('/academic/enrollments', {
       method: 'POST',
       body: JSON.stringify(enrollment),
+    });
+  }
+
+  async updateAcademicEnrollment(id: string, updates: Partial<AcademicEnrollment>): Promise<AcademicEnrollment> {
+    return this.request<AcademicEnrollment>(`/academic/enrollments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  // Academic Sessions & Bulk Progression
+  async getAcademicSessions(): Promise<AcademicSession[]> {
+    return this.request<AcademicSession[]>('/academic-sessions');
+  }
+
+  async createAcademicSession(session: Partial<AcademicSession>): Promise<AcademicSession> {
+    return this.request<AcademicSession>('/academic-sessions', {
+      method: 'POST',
+      body: JSON.stringify(session),
+    });
+  }
+
+  async updateAcademicSession(id: string, updates: Partial<AcademicSession>): Promise<AcademicSession> {
+    return this.request<AcademicSession>(`/academic-sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async setCurrentAcademicSession(id: string, semester?: 1 | 2): Promise<AcademicSession> {
+    return this.request<AcademicSession>(`/academic-sessions/${id}/set-current`, {
+      method: 'POST',
+      body: JSON.stringify({ semester }),
+    });
+  }
+
+  async previewBulkProgression(targetSession: string, targetSemester: number): Promise<BulkProgressionPreview> {
+    return this.request<BulkProgressionPreview>('/academic/progression/preview', {
+      method: 'POST',
+      body: JSON.stringify({ targetSession, targetSemester }),
+    });
+  }
+
+  async executeBulkProgression(targetSession: string, targetSemester: number): Promise<BulkProgressionResult> {
+    return this.request<BulkProgressionResult>('/academic/progression/execute', {
+      method: 'POST',
+      body: JSON.stringify({ targetSession, targetSemester }),
     });
   }
 
@@ -243,10 +346,24 @@ export class HttpApiAdapter implements BcamsApi {
     });
   }
 
+  async updateLecturer(id: string, updates: Partial<Lecturer>): Promise<Lecturer> {
+    return this.request<Lecturer>(`/lecturers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
   async linkStaffToLecturer(staffId: string, lecturerData: Partial<Lecturer>): Promise<Lecturer> {
     return this.request<Lecturer>(`/staff/${staffId}/link-lecturer`, {
       method: 'POST',
       body: JSON.stringify(lecturerData),
+    });
+  }
+
+  async bulkImportLecturers(records: any[]): Promise<{ importedCount: number; errors: any[] }> {
+    return this.request<{ importedCount: number; errors: any[] }>('/lecturers/bulk-import', {
+      method: 'POST',
+      body: JSON.stringify({ records }),
     });
   }
 
@@ -266,9 +383,33 @@ export class HttpApiAdapter implements BcamsApi {
     });
   }
 
+  async updateStaff(id: string, updates: Partial<Staff>): Promise<Staff> {
+    return this.request<Staff>(`/staff/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async assignHOD(staffId: string, departmentId: string, remove?: boolean): Promise<Staff> {
+    return this.request<Staff>(`/staff/${staffId}/assign-hod`, {
+      method: 'POST',
+      body: JSON.stringify({ department_id: departmentId, remove }),
+    });
+  }
+
+  async bulkImportStaff(records: any[]): Promise<{ importedCount: number; errors: any[] }> {
+    return this.request<{ importedCount: number; errors: any[] }>('/staff/bulk-import', {
+      method: 'POST',
+      body: JSON.stringify({ records }),
+    });
+  }
+
   // Sessions
-  async getSessions(courseOfferingId?: string): Promise<Session[]> {
-    const query = courseOfferingId ? `?offering_id=${encodeURIComponent(courseOfferingId)}` : '';
+  async getSessions(courseOfferingId?: string, lecturerId?: string): Promise<Session[]> {
+    const params = new URLSearchParams();
+    if (courseOfferingId) params.append('offering_id', courseOfferingId);
+    if (lecturerId) params.append('lecturer_id', lecturerId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<Session[]>(`/sessions${query}`);
   }
 
@@ -401,6 +542,20 @@ export class HttpApiAdapter implements BcamsApi {
     return this.request<Policy>('/policies', {
       method: 'POST',
       body: JSON.stringify(policy),
+    });
+  }
+
+  async updatePolicy(id: string, updates: Partial<Policy>): Promise<Policy> {
+    return this.request<Policy>(`/policies/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async saveInstitutionalPolicies(policies: Partial<Policy>[]): Promise<Policy[]> {
+    return this.request<Policy[]>('/policies/institution', {
+      method: 'PUT',
+      body: JSON.stringify({ policies }),
     });
   }
 

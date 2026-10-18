@@ -81,7 +81,7 @@ export default {
         },
         border: '#E5E5E5',
         input: '#E5E5E5',
-        ring: '#069162',
+        ring: '#334155', // Neutral dark-grey focus outline (slate-700)
         popover: {
           DEFAULT: '#FFFFFF',
           foreground: '#0A0A0A',

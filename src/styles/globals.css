@@ -33,7 +33,25 @@
 
   /* Focus ring utility */
   :focus-visible {
-    @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Standardized neutral dark-grey form control focus */
+  input:focus,
+  input:focus-visible,
+  textarea:focus,
+  textarea:focus-visible,
+  select:focus,
+  select:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Form control validation focus state */
+  input[aria-invalid="true"]:focus,
+  input[aria-invalid="true"]:focus-visible,
+  textarea[aria-invalid="true"]:focus,
+  textarea[aria-invalid="true"]:focus-visible {
+    @apply ring-destructive border-destructive;
   }
 
   /* Scrollbar styling */

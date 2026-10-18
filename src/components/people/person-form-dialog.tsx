@@ -1,9 +1,6 @@
 /**
  * Person Registration Form Dialog
- * 
- * Zod-validated registration modal for Students, Lecturers, and Non-Academic Staff.
- * Complies with BCAMS identity schema and department assignments.
- */
+*/
 import React, { useState } from 'react';
 import { z } from 'zod';
 import {
@@ -18,7 +15,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Department, Student, Lecturer, Staff } from '@/types';
-import { UserPlus, AlertCircle } from 'lucide-react';
 
 const studentSchema = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters'),
@@ -228,9 +224,6 @@ export function PersonFormDialog({
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary-50 text-primary flex items-center justify-center">
-                <UserPlus className="h-4 w-4" />
-              </div>
               <div>
                 <DialogTitle>{titles[personType]}</DialogTitle>
                 <DialogDescription className="text-xs">
@@ -254,7 +247,6 @@ export function PersonFormDialog({
               />
               {errors.fullName && (
                 <p className="text-destructive text-[11px] mt-1 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
                   {errors.fullName}
                 </p>
               )}
@@ -282,7 +274,6 @@ export function PersonFormDialog({
                 />
                 {(personType === 'student' ? errors.matricNumber : errors.staffNumber) && (
                   <p className="text-destructive text-[11px] mt-1 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
                     {personType === 'student' ? errors.matricNumber : errors.staffNumber}
                   </p>
                 )}
@@ -301,7 +292,6 @@ export function PersonFormDialog({
                 />
                 {errors.email && (
                   <p className="text-destructive text-[11px] mt-1 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
                     {errors.email}
                   </p>
                 )}
@@ -381,7 +371,6 @@ export function PersonFormDialog({
                 />
                 {errors.designation && (
                   <p className="text-destructive text-[11px] mt-1 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
                     {errors.designation}
                   </p>
                 )}

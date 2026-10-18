@@ -14,7 +14,6 @@ import { PageSkeleton } from '@/components/common/empty-error-states';
 import { DashboardPage } from '@/pages/dashboard';
 import { SessionsPage } from '@/pages/sessions';
 import { SessionDetailsPage } from '@/pages/sessions/details';
-import { AttendancePage } from '@/pages/attendance';
 import { AttendanceCapturePage } from '@/pages/attendance/capture';
 import { GateAttendancePage } from '@/pages/gate';
 import { GateRecordsPage } from '@/pages/gate/records';
@@ -22,13 +21,9 @@ import { StudentsPage } from '@/pages/people/students';
 import { LecturersPage } from '@/pages/people/lecturers';
 import { StaffPage } from '@/pages/people/staff';
 import { EnrollmentPage } from '@/pages/enrollment';
-import { DepartmentsPage } from '@/pages/academic/departments';
+import { AcademiaPage } from '@/pages/academic/academia';
 import { CoursesPage } from '@/pages/academic/courses';
-import { AcademicEnrollmentPage } from '@/pages/academic/enrollment';
-import { DevicesPage } from '@/pages/devices';
-import { PoliciesPage } from '@/pages/policies';
 import { ReportsPage } from '@/pages/reports';
-import { AuditPage } from '@/pages/audit';
 import { LoginPage } from '@/pages/auth/login';
 import { RoleGuard } from '@/components/common/role-guard';
 
@@ -54,7 +49,7 @@ export function App() {
 
   useEffect(() => {
     // Initialize offline sync queue from persistent IndexedDB
-    useSyncStore.getState().initializeQueue().catch(() => {});
+    useSyncStore.getState().initializeQueue().catch(() => { });
 
     // Automatically initialize authenticated session with default super admin for instant operational readiness
     if (!isAuthenticated) {
@@ -67,6 +62,9 @@ export function App() {
       <Routes>
         {/* Public Login Route */}
         <Route path="/login" element={<LoginPage />} />
+
+        {/* Standalone Gate Terminal Route (Self-Service Physical Turnstile Unit — No Role Login Required) */}
+        <Route path="/gate" element={<GateAttendancePage />} />
 
         {/* Protected Operational Shell */}
         <Route
@@ -82,11 +80,9 @@ export function App() {
           {/* Sessions & Capture */}
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/sessions/:sessionId" element={<SessionDetailsPage />} />
-          <Route path="/attendance" element={<AttendancePage />} />
+          <Route path="/attendance" element={<Navigate to="/sessions" replace />} />
+          <Route path="/attendance/capture" element={<AttendanceCapturePage />} />
           <Route path="/attendance/capture/:sessionId" element={<AttendanceCapturePage />} />
-
-          {/* Gate Attendance Kiosk (Staff Gate Capturers & Testing) */}
-          <Route path="/gate" element={<GateAttendancePage />} />
 
           {/* Gate Attendance Administrative Records (Super Admin ONLY) */}
           <Route
@@ -104,22 +100,24 @@ export function App() {
           <Route
             path="/people/staff"
             element={
-              <RoleGuard roles={['super_admin']}>
+              <RoleGuard roles={['super_admin', 'hod']}>
                 <StaffPage />
               </RoleGuard>
             }
           />
 
-          {/* Academic Structure & Enrollment Progression */}
+          {/* Academic Structure (Academic Progression managed via Student Registry) */}
+          <Route path="/academic/enrollment" element={<Navigate to="/people/students" replace />} />
           <Route
-            path="/academic/enrollment"
+            path="/academic/academia"
             element={
-              <RoleGuard roles={['super_admin', 'hod']}>
-                <AcademicEnrollmentPage />
+              <RoleGuard roles={['super_admin']}>
+                <AcademiaPage />
               </RoleGuard>
             }
           />
-          <Route path="/academic/departments" element={<DepartmentsPage />} />
+          <Route path="/academia" element={<Navigate to="/academic/academia" replace />} />
+          <Route path="/academic/departments" element={<Navigate to="/academic/academia" replace />} />
           <Route path="/academic/courses" element={<CoursesPage />} />
 
           {/* Biometrics (Super Admin & HOD) */}
@@ -133,22 +131,8 @@ export function App() {
           />
 
           {/* System & Operations */}
-          <Route
-            path="/devices"
-            element={
-              <RoleGuard roles={['super_admin']}>
-                <DevicesPage />
-              </RoleGuard>
-            }
-          />
-          <Route
-            path="/policies"
-            element={
-              <RoleGuard roles={['super_admin']}>
-                <PoliciesPage />
-              </RoleGuard>
-            }
-          />
+          <Route path="/devices" element={<Navigate to="/" replace />} />
+          <Route path="/policies" element={<Navigate to="/academic/academia" replace />} />
           <Route
             path="/reports"
             element={
@@ -157,14 +141,7 @@ export function App() {
               </RoleGuard>
             }
           />
-          <Route
-            path="/audit"
-            element={
-              <RoleGuard roles={['super_admin']}>
-                <AuditPage />
-              </RoleGuard>
-            }
-          />
+          <Route path="/audit" element={<Navigate to="/" replace />} />
         </Route>
 
         {/* Catch-all */}

@@ -1,34 +1,27 @@
 /**
  * Students Page — Remediated & Scope-Aware
- * 
- * Implements:
- * - Scoped queries (HOD sees own department, Super Admin sees all)
- * - Separation of Student Identity from Academic Progression
- * - Manual creation & Enterprise Bulk Import with validation & preview
- * - Differentiation of new student creation vs academic enrollment updates
- * - Rejection of raw biometric templates in import files
- * - Pagination across records
  */
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/layout/header';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
-import { BiometricStatusBadge } from '@/components/common/status-indicators';
 import { PersonFormDialog } from '@/components/people';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { PageSkeleton } from '@/components/common/empty-error-states';
 import { api } from '@/api';
 import { useAuthStore } from '@/stores/auth-store';
 import { useToast } from '@/hooks';
 import { canManageStudents } from '@/lib/permissions';
 import { generateCSV, downloadCSV } from '@/domain';
-import type { Student, Department } from '@/types';
+import { BulkImportDialog } from '@/components/common/bulk-import-dialog';
+import type { Student, Department, AcademicEnrollment, Course, CourseEnrollment } from '@/types';
 import {
-  Plus, GraduationCap, UserCheck, Upload, Download, FileSpreadsheet,
-  AlertTriangle, CheckCircle2, Search, Filter, Building2, Shield,
+  Plus, Upload, Download, Search, Building2, Edit2, History
 } from 'lucide-react';
 
 const statusVariants: Record<string, 'success' | 'warning' | 'muted' | 'destructive'> = {
@@ -39,18 +32,13 @@ const statusVariants: Record<string, 'success' | 'warning' | 'muted' | 'destruct
   suspended: 'destructive',
 };
 
-interface ImportRowPreview {
-  matricNumber: string;
-  fullName: string;
-  level: number;
-  departmentId: string;
-  departmentName: string;
-  programme: string;
-  type: 'new_student' | 'progression_update' | 'error';
-  errorReason?: string;
-}
+const SAMPLE_STUDENT_CSV = "matricNumber,fullName,level,departmentCode,programme,academicSession\n" +
+  "CSC/2026/0101,Chinedu Joseph Okafor,200,CSC,B.Sc. Computer Science,2026/2027\n" +
+  "CSC/2026/0102,Zainab Aliyu,300,CSC,B.Sc. Computer Science,2026/2027\n" +
+  "CSC/2026/0045,Amina Ibrahim,200,CSC,B.Sc. Computer Science,2026/2027";
 
 export function StudentsPage() {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const { toast } = useToast();
 
@@ -67,22 +55,55 @@ export function StudentsPage() {
 
   // Bulk Import state
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importFileContent, setImportFileContent] = useState('');
-  const [importFileName, setImportFileName] = useState('');
-  const [importPreviewRows, setImportPreviewRows] = useState<ImportRowPreview[]>([]);
-  const [isParsingImport, setIsParsingImport] = useState(false);
-  const [isExecutingImport, setIsExecutingImport] = useState(false);
+
+  // Edit Student State (Section 19)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [studentToEdit, setStudentToEdit] = useState<Student | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editProgramme, setEditProgramme] = useState('');
+  const [editStatus, setEditStatus] = useState<string>('active');
+  const [isUpdatingStudent, setIsUpdatingStudent] = useState(false);
+
+  // Progression & Course Enrollment State
+  const [isProgressionModalOpen, setIsProgressionModalOpen] = useState(false);
+  const [studentForProgression, setStudentForProgression] = useState<Student | null>(null);
+  const [studentEnrollments, setStudentEnrollments] = useState<AcademicEnrollment[]>([]);
+  const [isLoadingEnrollments, setIsLoadingEnrollments] = useState(false);
+  const [newProgSession, setNewProgSession] = useState('2026/2027');
+  const [newProgLevel, setNewProgLevel] = useState('300');
+  const [newProgSemester, setNewProgSemester] = useState('1');
+  const [isAddingProgression, setIsAddingProgression] = useState(false);
+  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
+  const [selectedCourseToEnroll, setSelectedCourseToEnroll] = useState('');
+  const [isEnrollingCourse, setIsEnrollingCourse] = useState(false);
+
+  // Export Modal state
+  const [allAcademicEnrollments, setAllAcademicEnrollments] = useState<AcademicEnrollment[]>([]);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [exportAcademicSession, setExportAcademicSession] = useState('2026/2027');
+  const [exportSemester, setExportSemester] = useState('all');
+  const [exportDept, setExportDept] = useState('all');
+  const [exportLevel, setExportLevel] = useState('all');
+  const [exportStatus, setExportStatus] = useState('all');
+  const [isExporting, setIsExporting] = useState(false);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
       const scopeDeptId = user?.role === 'hod' ? user.departmentId : undefined;
-      const [studs, depts] = await Promise.all([
+      const [studs, depts, crs, enrolls] = await Promise.all([
         api.getStudents(scopeDeptId),
         api.getDepartments(),
+        api.getCourses(),
+        api.getAcademicEnrollments(),
       ]);
       setStudents(studs);
       setDepartments(depts);
+      setAvailableCourses(crs);
+      setAllAcademicEnrollments(enrolls);
+      if (crs.length > 0) setSelectedCourseToEnroll(crs[0].code);
     } catch (err) {
       console.error('Failed to load students:', err);
       toast.error('Failed to load student records');
@@ -98,6 +119,135 @@ export function StudentsPage() {
   const handleStudentCreated = (newStudent: Student) => {
     setStudents(prev => [newStudent, ...prev]);
     toast.success(`${newStudent.fullName} (${newStudent.matricNumber}) was successfully registered.`);
+  };
+
+  // Open Edit Modal
+  const handleOpenEdit = (student: Student) => {
+    setStudentToEdit(student);
+    setEditFullName(student.fullName);
+    setEditEmail(student.contactEmail || '');
+    setEditPhone(student.contactPhone || '');
+    setEditProgramme(student.currentProgramme || student.programme || '');
+    setEditStatus(student.status || student.lifecycleStatus || 'active');
+    setIsEditModalOpen(true);
+  };
+
+  // Save Edit Student
+  const handleSaveEdit = async () => {
+    if (!studentToEdit) return;
+    setIsUpdatingStudent(true);
+    try {
+      const updated = await api.updateStudent(studentToEdit.id, {
+        fullName: editFullName,
+        contactEmail: editEmail,
+        contactPhone: editPhone,
+        currentProgramme: editProgramme,
+        programme: editProgramme,
+        status: editStatus as any,
+        lifecycleStatus: editStatus as any,
+      });
+
+      setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+      toast.success(`Updated record for ${updated.fullName} (${updated.matricNumber})`);
+      setIsEditModalOpen(false);
+    } catch (err) {
+      toast.error('Failed to update student details');
+    } finally {
+      setIsUpdatingStudent(false);
+    }
+  };
+
+  // Open Progression & Enrollment Modal
+  const handleOpenProgression = async (student: Student) => {
+    setStudentForProgression(student);
+    setIsProgressionModalOpen(true);
+    setIsLoadingEnrollments(true);
+    try {
+      const enrollments = await api.getAcademicEnrollments(student.id);
+      setStudentEnrollments(enrollments);
+      const nextLvl = (student.currentLevel || student.level || 100) + 100;
+      setNewProgLevel(String(Math.min(nextLvl, 500)));
+    } catch (err) {
+      toast.error('Failed to load student academic enrollment history');
+    } finally {
+      setIsLoadingEnrollments(false);
+    }
+  };
+
+  // Add Academic Progression (Section 20 & 21)
+  const handleAddProgression = async () => {
+    if (!studentForProgression) return;
+    setIsAddingProgression(true);
+    try {
+      const created = await api.createAcademicEnrollment({
+        studentId: studentForProgression.id,
+        studentName: studentForProgression.fullName,
+        matricNumber: studentForProgression.matricNumber,
+        departmentId: studentForProgression.departmentId,
+        departmentName: studentForProgression.departmentName,
+        programme: studentForProgression.currentProgramme || studentForProgression.programme,
+        academicSession: newProgSession,
+        level: Number(newProgLevel),
+        semester: Number(newProgSemester),
+        status: 'active',
+        enrolledCourses: studentForProgression.courseEnrollments || [],
+      });
+
+      setStudentEnrollments(prev => [created, ...prev]);
+      setStudents(prev => prev.map(s => s.id === studentForProgression.id ? {
+        ...s,
+        currentLevel: created.level,
+        currentSession: created.academicSession,
+        level: created.level,
+        academicSession: created.academicSession,
+      } : s));
+
+      toast.success(`Progressed ${studentForProgression.fullName} to Level ${created.level} for session ${created.academicSession}`);
+    } catch (err) {
+      toast.error('Failed to record academic progression');
+    } finally {
+      setIsAddingProgression(false);
+    }
+  };
+
+  // Enroll Student in Course (supports carryover / general / cross-department courses)
+  const handleEnrollCourse = async () => {
+    if (!studentForProgression || !selectedCourseToEnroll) return;
+    const crs = availableCourses.find(c => c.code === selectedCourseToEnroll);
+    if (!crs) return;
+
+    setIsEnrollingCourse(true);
+    try {
+      const currentList = studentForProgression.courseEnrollments || [];
+      if (currentList.some(ce => ce.courseCode === crs.code)) {
+        toast.error(`Student is already enrolled in ${crs.code}`);
+        return;
+      }
+
+      const newCe: CourseEnrollment = {
+        id: `ce-${Date.now().toString(36)}`,
+        studentId: studentForProgression.id,
+        courseOfferingId: `co-${crs.code.toLowerCase().replace(/\s+/g, '')}-2026`,
+        courseCode: crs.code,
+        courseTitle: crs.title,
+        creditUnits: crs.creditUnits,
+        type: crs.isGeneral ? 'general' : 'core',
+        enrolledAt: new Date().toISOString(),
+      };
+
+      const updatedList = [...currentList, newCe];
+      const updated = await api.updateStudent(studentForProgression.id, {
+        courseEnrollments: updatedList,
+      });
+
+      setStudentForProgression(updated);
+      setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+      toast.success(`Enrolled in ${crs.code} (${crs.title})`);
+    } catch (err) {
+      toast.error('Failed to enroll student in course');
+    } finally {
+      setIsEnrollingCourse(false);
+    }
   };
 
   // Filtered dataset
@@ -116,140 +266,86 @@ export function StudentsPage() {
     });
   }, [students, levelFilter, deptFilter, searchQuery]);
 
-  // CSV Template download
-  const handleDownloadSampleCSV = () => {
-    const sample = "matricNumber,fullName,level,departmentCode,programme,academicSession\n" +
-      "CSC/2026/0101,Chinedu Joseph Okafor,200,CSC,B.Sc. Computer Science,2026/2027\n" +
-      "CSC/2026/0102,Zainab Aliyu,300,CSC,B.Sc. Computer Science,2026/2027\n" +
-      "CSC/2026/0045,Amina Ibrahim,200,CSC,B.Sc. Computer Science,2026/2027";
-    downloadCSV(sample, "BCAMS_Student_Import_Template.csv");
-    toast.success("Sample template downloaded");
-  };
 
-  // Handle file selection and parsing
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    setImportFileName(file.name);
-    setIsParsingImport(true);
+  // Filtered dataset for Export Modal
+  const exportMatchingStudents = useMemo(() => {
+    return students.filter(s => {
+      // 1. Department filter (Enforce scoping: HOD locked to user.departmentId; Super Admin uses exportDept)
+      const effectiveDept = user?.role === 'hod' ? user?.departmentId : (user?.role === 'super_admin' ? exportDept : user?.departmentId);
+      if (effectiveDept && effectiveDept !== 'all' && s.departmentId !== effectiveDept) {
+        return false;
+      }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setImportFileContent(text);
-      parseAndValidateCSV(text);
-      setIsParsingImport(false);
-    };
-    reader.readAsText(file);
-  };
+      // 2. Academic Session filter
+      if (exportAcademicSession !== 'all') {
+        const studentSession = s.currentSession || s.academicSession;
+        if (studentSession && studentSession !== exportAcademicSession) {
+          return false;
+        }
+      }
 
-  const parseAndValidateCSV = (csvText: string) => {
-    const lines = csvText.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 2) {
-      toast.error('The uploaded CSV file is empty or missing headers');
-      setImportPreviewRows([]);
+      // 3. Level filter
+      if (exportLevel !== 'all') {
+        const studentLevel = s.currentLevel || s.level;
+        if (studentLevel !== Number(exportLevel)) {
+          return false;
+        }
+      }
+
+      // 4. Status filter
+      if (exportStatus !== 'all') {
+        const studentStatus = s.lifecycleStatus || s.status || 'active';
+        if (studentStatus !== exportStatus) {
+          return false;
+        }
+      }
+
+      // 5. Semester filter (Cross-referenced against academic enrollments)
+      if (exportSemester !== 'all') {
+        const hasMatchingEnrollment = allAcademicEnrollments.some(e =>
+          e.studentId === s.id &&
+          (exportAcademicSession === 'all' || e.academicSession === exportAcademicSession) &&
+          String(e.semester) === exportSemester
+        );
+        if (!hasMatchingEnrollment) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [students, exportDept, exportAcademicSession, exportLevel, exportStatus, exportSemester, allAcademicEnrollments, user]);
+
+  const handleExecuteExport = async () => {
+    if (exportMatchingStudents.length === 0) {
+      toast.warning('No student records match the selected export criteria');
       return;
     }
 
-    const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/['"]/g, ''));
-    
-    // Critical Domain Check: reject raw biometric templates in bulk import (Section 7)
-    if (headers.some(h => h.includes('biometric') || h.includes('template') || h.includes('fingerprint'))) {
-      toast.error('Security Violation: Raw biometric templates are strictly prohibited in CSV imports.');
-      setImportPreviewRows([]);
-      return;
-    }
-
-    const matricIdx = headers.findIndex(h => h.includes('matric'));
-    const nameIdx = headers.findIndex(h => h.includes('name'));
-    const levelIdx = headers.findIndex(h => h.includes('level'));
-    const deptIdx = headers.findIndex(h => h.includes('dept'));
-    const progIdx = headers.findIndex(h => h.includes('prog'));
-
-    const rows: ImportRowPreview[] = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.trim().replace(/['"]/g, ''));
-      const matric = matricIdx >= 0 ? cols[matricIdx] : cols[0];
-      const name = nameIdx >= 0 ? cols[nameIdx] : cols[1];
-      const lvl = levelIdx >= 0 ? Number(cols[levelIdx]) : 100;
-      const deptCode = deptIdx >= 0 ? cols[deptIdx] : 'CSC';
-      const prog = progIdx >= 0 ? cols[progIdx] : 'Computer Science';
-
-      if (!matric || !name) {
-        rows.push({
-          matricNumber: matric || 'MISSING',
-          fullName: name || 'MISSING',
-          level: lvl || 100,
-          departmentId: 'dept-cs',
-          departmentName: 'Computer Science',
-          programme: prog,
-          type: 'error',
-          errorReason: 'Missing Matric Number or Name',
-        });
-        continue;
-      }
-
-      // Check if student already exists -> progression update
-      const existing = students.find(s => s.matricNumber.trim().toUpperCase() === matric.trim().toUpperCase());
-      if (existing) {
-        rows.push({
-          matricNumber: matric.toUpperCase(),
-          fullName: name,
-          level: lvl,
-          departmentId: existing.departmentId,
-          departmentName: existing.departmentName,
-          programme: prog,
-          type: 'progression_update',
-        });
-      } else {
-        rows.push({
-          matricNumber: matric.toUpperCase(),
-          fullName: name,
-          level: lvl,
-          departmentId: 'dept-cs',
-          departmentName: 'Computer Science',
-          programme: prog,
-          type: 'new_student',
-        });
-      }
-    }
-
-    setImportPreviewRows(rows);
-  };
-
-  const handleConfirmImport = async () => {
-    setIsExecutingImport(true);
+    setIsExporting(true);
     try {
-      const validRows = importPreviewRows.filter(r => r.type !== 'error');
-      await api.bulkImportStudents(validRows);
-      toast.success(`Successfully processed ${validRows.length} student records`);
-      setIsImportModalOpen(false);
-      setImportPreviewRows([]);
-      setImportFileName('');
-      loadData();
-    } catch (err) {
-      toast.error('Failed to execute bulk student import');
+      const csv = generateCSV(exportMatchingStudents, [
+        { header: 'Matric Number', accessor: s => s.matricNumber },
+        { header: 'Full Name', accessor: s => s.fullName },
+        { header: 'Level', accessor: s => `${s.currentLevel || s.level}L` },
+        { header: 'Department', accessor: s => s.departmentName },
+        { header: 'Programme', accessor: s => s.currentProgramme || s.programme },
+        { header: 'Academic Session', accessor: s => s.currentSession || s.academicSession || '2026/2027' },
+        { header: 'Biometric Status', accessor: s => s.biometricStatus },
+        { header: 'Enrolled Fingers', accessor: s => `${s.enrolledFingers}/10` },
+        { header: 'Capability', accessor: s => s.captureCapability || 'None' },
+        { header: 'Lifecycle Status', accessor: s => s.lifecycleStatus || s.status || 'active' },
+      ]);
+      const sessionSuffix = exportAcademicSession !== 'all' ? exportAcademicSession.replace('/', '-') : 'All_Sessions';
+      downloadCSV(csv, `BCAMS_Students_Registry_${sessionSuffix}_${Date.now()}.csv`);
+      toast.success(`Exported ${exportMatchingStudents.length} student records`);
+      setIsExportOpen(false);
+    } catch {
+      toast.error('Failed to export student records');
     } finally {
-      setIsExecutingImport(false);
+      setIsExporting(false);
     }
-  };
-
-  const handleExportCurrentView = () => {
-    const csv = generateCSV(filteredStudents, [
-      { header: 'Matric Number', accessor: s => s.matricNumber },
-      { header: 'Full Name', accessor: s => s.fullName },
-      { header: 'Level', accessor: s => `${s.currentLevel || s.level}L` },
-      { header: 'Department', accessor: s => s.departmentName },
-      { header: 'Programme', accessor: s => s.currentProgramme || s.programme },
-      { header: 'Biometric Status', accessor: s => s.biometricStatus },
-      { header: 'Enrolled Fingers', accessor: s => `${s.enrolledFingers}/10` },
-      { header: 'Capability', accessor: s => s.captureCapability || 'None' },
-      { header: 'Lifecycle Status', accessor: s => s.lifecycleStatus || s.status || 'active' },
-    ]);
-    downloadCSV(csv, 'BCAMS_Students_Registry.csv');
-    toast.success('Student records exported');
   };
 
   const columns: DataTableColumn<Student>[] = [
@@ -259,20 +355,35 @@ export function StudentsPage() {
       sortable: true,
       sortFn: (a, b) => a.fullName.localeCompare(b.fullName),
       render: (s) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-primary-50 text-primary flex items-center justify-center font-bold text-xs flex-shrink-0">
-            {s.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2)}
-          </div>
-          <div>
+        <div className="flex items-center gap-3 min-w-0 max-w-[260px]">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="font-semibold text-foreground text-xs">{s.fullName}</p>
+              <p className="font-semibold text-foreground text-xs truncate" title={s.fullName}>
+                {s.fullName}
+              </p>
               {s.captureCapability === 'session_capture' && (
-                <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-300 font-medium">
-                  Session Capturer
-                </Badge>
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span title="Session Capturer">
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold px-1 py-0 cursor-help flex-shrink-0"
+                        >
+                          SC
+                        </Badge>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      Session Capturer
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
             </div>
-            <p className="text-xs text-muted-foreground font-mono">{s.matricNumber}</p>
+            <p className="text-xs text-muted-foreground font-mono truncate" title={s.matricNumber}>
+              {s.matricNumber}
+            </p>
           </div>
         </div>
       ),
@@ -283,9 +394,13 @@ export function StudentsPage() {
       sortable: true,
       sortFn: (a, b) => a.departmentName.localeCompare(b.departmentName),
       render: (s) => (
-        <div>
-          <p className="text-xs font-medium text-foreground">{s.departmentName}</p>
-          <p className="text-[11px] text-muted-foreground">{s.currentProgramme || s.programme}</p>
+        <div className="min-w-0 max-w-[220px]">
+          <p className="text-xs font-medium text-foreground truncate" title={s.departmentName}>
+            {s.departmentName}
+          </p>
+          <p className="text-[11px] text-muted-foreground truncate" title={s.currentProgramme || s.programme}>
+            {s.currentProgramme || s.programme}
+          </p>
         </div>
       ),
     },
@@ -295,7 +410,7 @@ export function StudentsPage() {
       sortable: true,
       sortFn: (a, b) => (a.currentLevel || a.level) - (b.currentLevel || b.level),
       render: (s) => (
-        <Badge variant="outline" className="font-mono text-xs">
+        <Badge variant="outline" className="font-mono text-xs flex-shrink-0">
           {s.currentLevel || s.level}L
         </Badge>
       ),
@@ -308,7 +423,7 @@ export function StudentsPage() {
         return (
           <Badge
             variant={statusVariants[stat] || 'default'}
-            className="capitalize text-xs font-medium"
+            className="capitalize text-xs font-medium flex-shrink-0"
           >
             {stat}
           </Badge>
@@ -320,8 +435,7 @@ export function StudentsPage() {
       header: 'Biometric Status',
       render: (s) => (
         <div className="flex items-center gap-2">
-          <BiometricStatusBadge status={s.biometricStatus} />
-          <span className="text-xs font-mono text-muted-foreground font-semibold">
+          <span className="text-xs font-mono text-muted-foreground font-semibold flex-shrink-0">
             {s.enrolledFingers}/10
           </span>
         </div>
@@ -331,9 +445,35 @@ export function StudentsPage() {
       key: 'enrollments',
       header: 'Term Enrollments',
       render: (s) => (
-        <span className="text-xs font-mono text-muted-foreground">
+        <span className="text-xs font-mono text-muted-foreground flex-shrink-0">
           {s.courseEnrollments?.length || 0} courses
         </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (s) => (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => handleOpenEdit(s)}
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-slate-100"
+            title="Edit student details"
+          >
+            <Edit2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => handleOpenProgression(s)}
+            className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+            title="Academic Progression & Course Enrollments"
+          >
+            <History className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       ),
     },
   ];
@@ -342,20 +482,17 @@ export function StudentsPage() {
     return <PageSkeleton />;
   }
 
-  const newRecordsCount = importPreviewRows.filter(r => r.type === 'new_student').length;
-  const updatesCount = importPreviewRows.filter(r => r.type === 'progression_update').length;
-  const errorsCount = importPreviewRows.filter(r => r.type === 'error').length;
+
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Header
         title="Student Registry"
-        subtitle="Manage permanent student identities, academic levels, and biometric activation status."
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleExportCurrentView} className="gap-2 text-xs">
+            <Button variant="outline" size="sm" onClick={() => setIsExportOpen(true)} className="gap-2 text-xs">
               <Download className="h-3.5 w-3.5" />
-              Export CSV
+              Export Students
             </Button>
             {canManageStudents(user) && (
               <>
@@ -383,21 +520,6 @@ export function StudentsPage() {
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {/* Scope Indicator Banner */}
-        <div className="bg-slate-50 border border-border rounded-lg p-3 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 text-slate-800">
-            <Shield className="h-4 w-4 text-primary" />
-            <span>
-              {user?.role === 'hod'
-                ? `Authorized Scope: Department of ${user.departmentName} records only.`
-                : 'Institution-Wide Access: Managing student registry across all faculties.'}
-            </span>
-          </div>
-          <Badge variant="outline" className="font-mono text-xs">
-            {students.length} Total Students
-          </Badge>
-        </div>
-
         {/* Filter Toolbar */}
         <div className="bg-white border border-border rounded-lg p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
           <div className="flex flex-wrap items-center gap-3 flex-1">
@@ -472,111 +594,418 @@ export function StudentsPage() {
       />
 
       {/* Enterprise Bulk Import Dialog with Validation & Preview */}
-      <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+      {/* Bulk Import Dialog */}
+      <BulkImportDialog
+        open={isImportModalOpen}
+        onOpenChange={setIsImportModalOpen}
+        entityType="student"
+        title="Bulk Import Students & Academic Progression"
+        description="Upload a CSV spreadsheet to register new students or record level progressions."
+        templateFilename="BCAMS_Student_Import_Template.csv"
+        sampleCSV={SAMPLE_STUDENT_CSV}
+        onImport={async (validRecords) => {
+          return await api.bulkImportStudents(validRecords);
+        }}
+        onSuccess={() => {
+          loadData();
+        }}
+        existingData={{
+          students,
+          departments,
+        }}
+        userRole={user?.role}
+        userDepartmentId={user?.departmentId}
+        userDepartmentName={user?.departmentName}
+      />
+
+      {/* Edit Student Dialog */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <FileSpreadsheet className="h-5 w-5 text-primary" />
-              Bulk Import Students & Academic Progression
+            <DialogTitle className="flex items-center gap-2 text-base text-foreground">
+              Edit Student Record
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Upload a CSV file to register new students or update level progressions for existing students. Raw biometric templates are strictly excluded.
+              Update student personal identity and institutional standing for {studentToEdit?.matricNumber}.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto space-y-4 py-3 text-xs">
-            {/* Step 1: Upload or Template */}
-            <div className="border border-dashed border-border rounded-lg p-5 text-center bg-slate-50/50 hover:bg-slate-50 transition-colors">
-              <Upload className="h-8 w-8 text-primary mx-auto mb-2" />
-              <p className="font-semibold text-foreground">Select CSV File to Upload</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Columns: matricNumber, fullName, level, departmentCode, programme, academicSession
-              </p>
-              <div className="mt-4 flex items-center justify-center gap-3">
-                <label className="cursor-pointer">
-                  <Button size="sm" type="button" className="bg-primary hover:bg-primary-600 text-white gap-2 pointer-events-none">
-                    <FileSpreadsheet className="h-4 w-4" />
-                    Browse Files
-                  </Button>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </label>
-                <Button variant="outline" size="sm" type="button" onClick={handleDownloadSampleCSV} className="gap-2">
-                  <Download className="h-4 w-4" />
-                  Download Sample CSV
-                </Button>
-              </div>
-              {importFileName && (
-                <p className="text-xs font-medium text-emerald-700 mt-3 font-mono">
-                  Loaded: {importFileName}
-                </p>
-              )}
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1">
+              <label className="font-semibold text-foreground">Full Name</label>
+              <Input
+                value={editFullName}
+                onChange={e => setEditFullName(e.target.value)}
+                className="h-8 text-xs"
+              />
             </div>
 
-            {/* Step 2: Breakdown & Preview */}
-            {importPreviewRows.length > 0 && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-md p-3 text-center">
-                    <p className="text-[11px] text-emerald-800 font-medium uppercase">New Students</p>
-                    <p className="text-lg font-bold text-emerald-900 mt-0.5">{newRecordsCount}</p>
-                  </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-center">
-                    <p className="text-[11px] text-blue-800 font-medium uppercase">Level Progressions</p>
-                    <p className="text-lg font-bold text-blue-900 mt-0.5">{updatesCount}</p>
-                  </div>
-                  <div className="bg-rose-50 border border-rose-200 rounded-md p-3 text-center">
-                    <p className="text-[11px] text-rose-800 font-medium uppercase">Invalid / Errors</p>
-                    <p className="text-lg font-bold text-rose-900 mt-0.5">{errorsCount}</p>
-                  </div>
-                </div>
-
-                <div className="border border-border rounded-lg max-h-52 overflow-y-auto divide-y divide-border">
-                  {importPreviewRows.slice(0, 10).map((row, idx) => (
-                    <div key={idx} className="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold">{row.matricNumber}</span>
-                          <span className="font-medium text-foreground">{row.fullName}</span>
-                          <Badge variant="outline" className="text-[10px]">{row.level}L</Badge>
-                        </div>
-                        {row.errorReason && (
-                          <p className="text-rose-600 text-[11px] mt-0.5">{row.errorReason}</p>
-                        )}
-                      </div>
-                      <Badge
-                        variant={row.type === 'new_student' ? 'success' : row.type === 'progression_update' ? 'default' : 'destructive'}
-                        className="text-[10px] capitalize"
-                      >
-                        {row.type.replace('_', ' ')}
-                      </Badge>
-                    </div>
-                  ))}
-                  {importPreviewRows.length > 10 && (
-                    <div className="p-2 text-center text-muted-foreground text-[11px] bg-muted/20">
-                      + {importPreviewRows.length - 10} more rows ready for processing
-                    </div>
-                  )}
-                </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Contact Email</label>
+                <Input
+                  type="email"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  placeholder="student@uni.edu.ng"
+                  className="h-8 text-xs"
+                />
               </div>
-            )}
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Contact Phone</label>
+                <Input
+                  value={editPhone}
+                  onChange={e => setEditPhone(e.target.value)}
+                  placeholder="+234..."
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-foreground">Academic Programme</label>
+              <Input
+                value={editProgramme}
+                onChange={e => setEditProgramme(e.target.value)}
+                placeholder="e.g. B.Sc. Computer Science"
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-foreground">Academic Lifecycle Status</label>
+              <Select value={editStatus} onValueChange={setEditStatus}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active" className="text-xs">Active (In Good Standing)</SelectItem>
+                  <SelectItem value="suspended" className="text-xs">Suspended</SelectItem>
+                  <SelectItem value="graduated" className="text-xs">Graduated (Alumnus)</SelectItem>
+                  <SelectItem value="withdrawn" className="text-xs">Withdrawn</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          <DialogFooter className="pt-2 border-t border-border">
-            <Button variant="outline" size="sm" onClick={() => setIsImportModalOpen(false)}>
+          <DialogFooter className="pt-2">
+            <Button variant="outline" size="sm" onClick={() => setIsEditModalOpen(false)}>
               Cancel
             </Button>
             <Button
               size="sm"
-              onClick={handleConfirmImport}
-              disabled={isExecutingImport || importPreviewRows.length === 0 || (newRecordsCount === 0 && updatesCount === 0)}
-              className="bg-primary hover:bg-primary-600 text-white gap-2"
+              disabled={isUpdatingStudent || !editFullName.trim()}
+              onClick={handleSaveEdit}
+              className="bg-primary hover:bg-primary-600 text-white"
             >
-              {isExecutingImport ? 'Importing...' : `Confirm & Process (${newRecordsCount + updatesCount} Records)`}
+              {isUpdatingStudent ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Progression & Course Enrollment Dialog */}
+      <Dialog open={isProgressionModalOpen} onOpenChange={setIsProgressionModalOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base text-foreground">
+              Academic Progression & Course History
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Student: <strong>{studentForProgression?.fullName}</strong> ({studentForProgression?.matricNumber}) • {studentForProgression?.departmentName}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2 text-xs">
+            {/* 1. Academic Progression History (Section 20 & 21) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-foreground text-xs uppercase tracking-wider flex items-center gap-1.5">
+                  Academic Progression Sequence
+                </h4>
+                <Badge variant="outline" className="text-[10px] font-mono">
+                  Current: {studentForProgression?.currentLevel || studentForProgression?.level}L
+                </Badge>
+              </div>
+
+              {isLoadingEnrollments ? (
+                <p className="text-xs text-muted-foreground py-2">Loading enrollment sequence...</p>
+              ) : studentEnrollments.length > 0 ? (
+                <div className="border border-border rounded-lg divide-y divide-border bg-slate-50/50">
+                  {studentEnrollments.map((ae) => (
+                    <div key={ae.id} className="p-3 flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold font-mono text-foreground text-xs">{ae.academicSession}</span>
+                          <Badge variant="secondary" className="font-mono text-[10px]">{ae.level}L</Badge>
+                          <span className="text-[11px] text-muted-foreground">Semester {ae.semester}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{ae.programme} • {ae.departmentName}</p>
+                      </div>
+                      <Badge
+                        variant={ae.status === 'active' ? 'success' : 'outline'}
+                        className="text-[10px] uppercase font-mono"
+                      >
+                        {ae.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 border border-dashed rounded-lg text-center text-muted-foreground text-xs">
+                  No historical academic enrollments found. Add a progression below.
+                </div>
+              )}
+            </div>
+
+            {/* 2. Add New Progression Form (Section 21) */}
+            <div className="p-3.5 bg-blue-50/60 border border-blue-200/80 rounded-lg space-y-3">
+              <h4 className="font-bold text-blue-950 text-xs">Record Academic Progression</h4>
+              <p className="text-[11px] text-blue-800">
+                Advances the student into a new academic session and level while strictly preserving historical academic records.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="font-semibold text-blue-950 text-[11px]">Academic Session</label>
+                  <Select value={newProgSession} onValueChange={setNewProgSession}>
+                    <SelectTrigger className="h-8 text-xs bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2026/2027" className="text-xs">2026/2027 (Current)</SelectItem>
+                      <SelectItem value="2027/2028" className="text-xs">2027/2028</SelectItem>
+                      <SelectItem value="2025/2026" className="text-xs">2025/2026 (Historical)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-blue-950 text-[11px]">Level Standing</label>
+                  <Select value={newProgLevel} onValueChange={setNewProgLevel}>
+                    <SelectTrigger className="h-8 text-xs bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="100" className="text-xs">100 Level</SelectItem>
+                      <SelectItem value="200" className="text-xs">200 Level</SelectItem>
+                      <SelectItem value="300" className="text-xs">300 Level</SelectItem>
+                      <SelectItem value="400" className="text-xs">400 Level</SelectItem>
+                      <SelectItem value="500" className="text-xs">500 Level</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-blue-950 text-[11px]">Semester</label>
+                  <Select value={newProgSemester} onValueChange={setNewProgSemester}>
+                    <SelectTrigger className="h-8 text-xs bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1" className="text-xs">First Semester</SelectItem>
+                      <SelectItem value="2" className="text-xs">Second Semester</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <Button
+                  size="sm"
+                  onClick={handleAddProgression}
+                  disabled={isAddingProgression}
+                  className="bg-blue-700 hover:bg-blue-800 text-white text-xs h-7"
+                >
+                  {isAddingProgression ? 'Progressing...' : 'Add Progression Record'}
+                </Button>
+              </div>
+            </div>
+
+            {/* 3. Course Enrollments (Supports General & Cross-Department courses) */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-foreground text-xs uppercase tracking-wider flex items-center gap-1.5">
+                Active Course Enrollments ({studentForProgression?.courseEnrollments?.length || 0})
+              </h4>
+
+              {studentForProgression?.courseEnrollments && studentForProgression.courseEnrollments.length > 0 ? (
+                <div className="border border-border rounded-lg divide-y divide-border">
+                  {studentForProgression.courseEnrollments.map((ce, idx) => (
+                    <div key={idx} className="p-2.5 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold font-mono text-foreground">{ce.courseCode}</span>
+                        <span className="text-muted-foreground ml-2">{ce.courseTitle}</span>
+                      </div>
+                      <Badge variant="outline" className="font-mono text-[10px]">
+                        {ce.creditUnits} CU
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">No courses currently enrolled.</p>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <Select value={selectedCourseToEnroll} onValueChange={setSelectedCourseToEnroll}>
+                  <SelectTrigger className="h-8 text-xs flex-1">
+                    <SelectValue placeholder="Select course to add..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCourses.map(c => (
+                      <SelectItem key={c.id || c.code} value={c.code} className="text-xs">
+                        {c.code} — {c.title} ({c.departmentName}, {c.creditUnits} CU)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isEnrollingCourse || !selectedCourseToEnroll}
+                  onClick={handleEnrollCourse}
+                  className="h-8 text-xs gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Enroll
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-border">
+            <Button size="sm" onClick={() => setIsProgressionModalOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configurable Export Modal */}
+      <Dialog open={isExportOpen} onOpenChange={setIsExportOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              Export Student Registry
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Configure parameters to generate a CSV export of student records.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            {/* Academic Session & Semester */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-muted-foreground font-medium block mb-1">Academic Session</label>
+                <Select value={exportAcademicSession} onValueChange={setExportAcademicSession}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Academic Session" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2026/2027">2026/2027 (Current)</SelectItem>
+                    <SelectItem value="2025/2026">2025/2026 (Historical)</SelectItem>
+                    <SelectItem value="all">All Sessions</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-muted-foreground font-medium block mb-1">Semester</label>
+                <Select value={exportSemester} onValueChange={setExportSemester}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Semester" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Semesters</SelectItem>
+                    <SelectItem value="1">First Semester</SelectItem>
+                    <SelectItem value="2">Second Semester</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Department: Super Admin Selectable; HOD Locked */}
+            {user?.role === 'super_admin' && (
+              <div>
+                <label className="text-muted-foreground font-medium block mb-1">Department</label>
+                <Select value={exportDept} onValueChange={setExportDept}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="All Departments" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {departments.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {user?.role === 'hod' && (
+              <div>
+                <label className="text-muted-foreground font-medium block mb-1">Department</label>
+                <div className="flex items-center gap-2 h-9 px-3 border border-border rounded-md bg-muted/40 text-xs text-foreground font-medium">
+                  <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span>{user?.departmentName || 'Authorized Department'}</span>
+                  <Badge variant="outline" className="ml-auto text-[10px] py-0 px-1 border-muted-foreground/30">
+                    Department Locked
+                  </Badge>
+                </div>
+              </div>
+            )}
+
+            {/* Level & Student Status */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-muted-foreground font-medium block mb-1">Standing Level</label>
+                <Select value={exportLevel} onValueChange={setExportLevel}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="All Levels" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Levels</SelectItem>
+                    <SelectItem value="100">100 Level</SelectItem>
+                    <SelectItem value="200">200 Level</SelectItem>
+                    <SelectItem value="300">300 Level</SelectItem>
+                    <SelectItem value="400">400 Level</SelectItem>
+                    <SelectItem value="500">500 Level</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-muted-foreground font-medium block mb-1">Student Status</label>
+                <Select value={exportStatus} onValueChange={setExportStatus}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="suspended">Suspended</SelectItem>
+                    <SelectItem value="graduated">Graduated</SelectItem>
+                    <SelectItem value="withdrawn">Withdrawn</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Summary Box */}
+            <div className="bg-muted/50 p-3 rounded-md text-xs space-y-1">
+              <p className="font-semibold text-foreground">Export Summary</p>
+              <p className="text-muted-foreground">
+                Matches {exportMatchingStudents.length} student record{exportMatchingStudents.length === 1 ? '' : 's'} ready for download.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setIsExportOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleExecuteExport} disabled={isExporting} className="gap-1.5">
+              <Download className="h-3.5 w-3.5" />
+              {isExporting ? 'Generating...' : 'Download CSV'}
             </Button>
           </DialogFooter>
         </DialogContent>

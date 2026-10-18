@@ -356,7 +356,7 @@ export function SettingsPage() {
 
             <SettingsSection
               title="Clock Integrity"
-              description="Monotonic clock cross-check configuration (FR-4)"
+              description="Monotonic clock cross-check configuration"
               icon={<Clock className="h-4 w-4" />}
             >
               <div className="flex items-center justify-between py-3">
@@ -450,11 +450,11 @@ export function SettingsPage() {
               <div className="py-3 space-y-3">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-success-600" />
-                  <span className="text-sm">FR-4 Monotonic Clock Cross-Check: Active</span>
+                  <span className="text-sm">Monotonic Clock Cross-Check: Active</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-success-600" />
-                  <span className="text-sm">FR-3 Offline Event Buffering: Active</span>
+                  <span className="text-sm">Offline Event Buffering: Active</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-success-600" />

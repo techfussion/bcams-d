@@ -23,7 +23,7 @@ const roleToUserId: Record<UserRole, string> = {
   hod: 'user-hod',
   lecturer: 'user-lec',
   student: 'user-stu-capturer',
-  staff: 'user-staff-capturer',
+  staff: 'user-staff-ordinary',
 };
 
 export const useAuthStore = create<AuthState>((set) => ({

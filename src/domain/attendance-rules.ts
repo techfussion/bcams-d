@@ -69,8 +69,10 @@ export function evaluateEligibility(
     ? (typeof thresholdPolicy.value === 'number' ? thresholdPolicy.value : defaultThreshold)
     : defaultThreshold;
 
-  const attendancePercentage = totalSessions === 0 ? 0 : Math.round((attended / totalSessions) * 100);
-  const eligible = attendancePercentage >= requiredPercentage;
+  const unroundedPercentage = totalSessions === 0 ? 0 : (attended / totalSessions) * 100;
+  const attendancePercentage = totalSessions === 0 ? 0 : Math.round(unroundedPercentage);
+  // Authoritative rule: comparison must use unrounded value to avoid false qualification
+  const eligible = unroundedPercentage >= requiredPercentage;
 
   // Calculate deficit: how many additional sessions needed
   let deficit = 0;
@@ -81,6 +83,47 @@ export function evaluateEligibility(
   }
 
   return { eligible, attendancePercentage, requiredPercentage, deficit };
+}
+
+export interface AttendanceQualificationResult {
+  qualified: boolean;
+  actualPercentage: number;
+  roundedPercentage: number;
+  threshold: number;
+  status: 'Qualified' | 'Not Qualified';
+}
+
+/**
+ * Authoritative Attendance Qualification Rule:
+ * A student qualifies when:
+ *   attendance percentage >= attendance threshold
+ * Comparison uses the unrounded percentage to ensure rounding does not
+ * incorrectly qualify a student below threshold.
+ * Outcomes are strictly binary: 'Qualified' or 'Not Qualified'.
+ */
+export function evaluateAttendanceQualification(
+  attended: number,
+  totalSessions: number,
+  threshold: number
+): AttendanceQualificationResult {
+  if (totalSessions <= 0) {
+    return {
+      qualified: false,
+      actualPercentage: 0,
+      roundedPercentage: 0,
+      threshold,
+      status: 'Not Qualified',
+    };
+  }
+  const actualPercentage = (attended / totalSessions) * 100;
+  const qualified = actualPercentage >= threshold;
+  return {
+    qualified,
+    actualPercentage,
+    roundedPercentage: Math.round(actualPercentage),
+    threshold,
+    status: qualified ? 'Qualified' : 'Not Qualified',
+  };
 }
 
 // ─── Punctuality Classification ─────────────────────────────────────────────

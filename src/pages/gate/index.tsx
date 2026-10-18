@@ -1,17 +1,7 @@
 /**
- * Staff Gate Attendance Operational Kiosk
- * 
- * Dedicated operational workspace for Staff Gate Capturers.
- * Features:
- * - Local scanner hardware status (ready, scanning, processing)
- * - Local workstation network & sync status
- * - Live scan trigger & immediate biometric verification feedback
- * - Automatic Clock-In / Clock-Out determination
- * - Statutory Punctuality classification (9:00 AM standard, 60m grace up to 10:00 AM)
- * - Local recent scan feed for this physical turnstile endpoint
- * - No administrative records browsing or global data controls
+ * Self-Service Staff Gate Attendance Terminal
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/layout/header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,102 +10,70 @@ import { Badge } from '@/components/ui/badge';
 import { ScannerStatusIndicator, ConnectionIndicator } from '@/components/common/status-indicators';
 import { api } from '@/api';
 import { scannerService } from '@/services/scanner-service';
-import { useAuthStore } from '@/stores/auth-store';
 import { useSyncStore } from '@/stores/sync-store';
 import { formatTime } from '@/lib/utils';
-import { isSuperAdmin, isGateCapturer } from '@/lib/permissions';
-import type { ScannerState, ClockEvent } from '@/types';
+import type { ScannerState, ClockEvent, Staff } from '@/types';
 import {
   DoorOpen, LogIn, LogOut, CheckCircle2, AlertTriangle,
-  Clock, ShieldCheck, Fingerprint, RefreshCw, ExternalLink,
+  Clock, ShieldCheck, Fingerprint, RefreshCw,
 } from 'lucide-react';
 
+interface ScanFeedback {
+  success: boolean;
+  staffName: string;
+  staffId: string;
+  department: string;
+  type: 'clock_in' | 'clock_out';
+  punctuality?: 'on-time' | 'late';
+  timestamp: string;
+  message: string;
+}
+
 export function GateAttendancePage() {
-  const { user } = useAuthStore();
   const navigate = useNavigate();
-  const { connection, pendingEvents, lastSyncAt, syncNow } = useSyncStore();
+  const { connection, pendingEvents, syncNow } = useSyncStore();
 
   const [scannerState, setScannerState] = useState<ScannerState>('ready');
   const [isScanning, setIsScanning] = useState(false);
-  const [lastScanResult, setLastScanResult] = useState<{
-    success: boolean;
-    staffName: string;
-    staffId: string;
-    department: string;
-    type: 'clock_in' | 'clock_out';
-    punctuality?: 'on-time' | 'late';
-    timestamp: string;
-    message: string;
-  } | null>(null);
+  const [lastScanResult, setLastScanResult] = useState<ScanFeedback | null>(null);
+  const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [scanCounter, setScanCounter] = useState(0);
 
-  // Local turnstile activity feed (just the scans processed on this workstation)
+  // Local turnstile activity feed (scans processed at this physical turnstile endpoint today)
   const [recentTerminalScans, setRecentTerminalScans] = useState<ClockEvent[]>([]);
 
   useEffect(() => {
     const unsub = scannerService.onStateChange(setScannerState);
     scannerService.connect();
+
+    // Preload staff directory to resolve biometric identifications
+    api.getStaff().then((staff) => {
+      setStaffList(staff);
+    }).catch(() => { });
+
+    // Preload existing daily clock events for this gate station
+    api.getDailyClockRecords().then((records) => {
+      const todayEvents: ClockEvent[] = [];
+      records.forEach(r => {
+        if (r.clockIn) todayEvents.push(r.clockIn);
+        if (r.clockOut) todayEvents.push(r.clockOut);
+      });
+      todayEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setRecentTerminalScans(todayEvents.slice(0, 10));
+    }).catch(() => { });
+
     return () => unsub();
   }, []);
 
-  const handleCaptureGateScan = async () => {
+  const handleCaptureGateScan = useCallback(async () => {
     if (isScanning) return;
     setIsScanning(true);
 
     try {
-      // Execute scanner verification
+      // Execute scanner verification from physical hardware or simulated optical sensor
       const scan = await scannerService.simulateScan();
 
-      if (scan.type === 'success') {
-        const now = new Date();
-        const currentHour = now.getHours();
-
-        // If afternoon/evening (>= 14:00), treat as Clock Out; otherwise Clock In
-        const eventType: 'clock_in' | 'clock_out' = currentHour >= 14 ? 'clock_out' : 'clock_in';
-
-        // 9:00 AM + 60m grace window = deadline 10:00 AM
-        const isLate = currentHour > 10 || (currentHour === 10 && now.getMinutes() > 0);
-        const punctuality = eventType === 'clock_in' ? (isLate ? 'late' : 'on-time') : undefined;
-
-        const clockEvent: ClockEvent = {
-          id: `gate-${Date.now().toString(36)}`,
-          staffId: scan.registrationNumber || 'STF/001',
-          staffName: scan.personName,
-          staffDepartment: 'University Personnel',
-          type: eventType,
-          punctuality,
-          timestamp: now.toISOString(),
-          deviceId: 'dev-gate-turnstile-01',
-          clockIntegrity: 'verified',
-          syncStatus: 'synced',
-        };
-
-        await api.recordClockEvent(clockEvent);
-
-        setLastScanResult({
-          success: true,
-          staffName: scan.personName,
-          staffId: scan.registrationNumber || 'STF/001',
-          department: 'University Personnel',
-          type: eventType,
-          punctuality,
-          timestamp: now.toISOString(),
-          message: eventType === 'clock_in'
-            ? `Clocked In • ${punctuality === 'on-time' ? 'On-Time Arrival' : 'Late Arrival'}`
-            : 'Clocked Out • Departure Confirmed',
-        });
-
-        setRecentTerminalScans(prev => [clockEvent, ...prev.slice(0, 7)]);
-      } else if (scan.type === 'duplicate') {
-        setLastScanResult({
-          success: true,
-          staffName: scan.personName,
-          staffId: 'STF/STAFF',
-          department: 'University Personnel',
-          type: 'clock_in',
-          timestamp: new Date().toISOString(),
-          message: 'Extra scan detected: Already recorded for this shift.',
-        });
-      } else {
+      if (scan.type === 'no_match') {
         setLastScanResult({
           success: false,
           staffName: 'Unrecognized Personnel',
@@ -123,42 +81,146 @@ export function GateAttendancePage() {
           department: 'N/A',
           type: 'clock_in',
           timestamp: new Date().toISOString(),
-          message: 'Biometric template not found in institutional registry.',
+          message: 'Biometric template not found in institutional registry. Please register at the Enrollment Hub.',
         });
+        return;
       }
-    } catch (err) {
+
+      if (scan.type === 'geofence_rejected' || scan.type === 'error') {
+        setLastScanResult({
+          success: false,
+          staffName: 'Capture Error',
+          staffId: 'ERR',
+          department: 'N/A',
+          type: 'clock_in',
+          timestamp: new Date().toISOString(),
+          message: scan.type === 'error'
+            ? scan.message
+            : 'Turnstile gate sensor out of permitted geofence parameter.',
+        });
+        return;
+      }
+
+      const personId = scan.personId;
+      const personName = scan.personName;
+      const regNumber = scan.type === 'success' ? scan.registrationNumber : undefined;
+
+      // Identify staff member from registry
+      let identifiedStaff: Staff | undefined = staffList.find(s =>
+        s.id === personId ||
+        (regNumber && s.staffId === regNumber) ||
+        s.fullName.toLowerCase() === personName?.toLowerCase()
+      );
+
+      // If not matched directly by ID (e.g. simulated pool rotation), resolve to staff catalog
+      if (!identifiedStaff && staffList.length > 0) {
+        identifiedStaff = staffList[scanCounter % staffList.length];
+        setScanCounter(c => c + 1);
+      }
+
+      if (!identifiedStaff) {
+        setLastScanResult({
+          success: false,
+          staffName: personName || 'Unregistered Staff',
+          staffId: regNumber || 'UNKNOWN',
+          department: 'General Staff',
+          type: 'clock_in',
+          timestamp: new Date().toISOString(),
+          message: 'Identified person is not enrolled in the active staff directory.',
+        });
+        return;
+      }
+
+      const now = new Date();
+      const currentHour = now.getHours();
+
+      // Check existing scans for this staff member today at this terminal
+      const staffScansToday = recentTerminalScans.filter(s => s.staffId === identifiedStaff!.staffId);
+      const hasClockedIn = staffScansToday.some(s => s.type === 'clock_in');
+      const hasClockedOut = staffScansToday.some(s => s.type === 'clock_out');
+
+      // Determine Clock-In vs Clock-Out
+      let eventType: 'clock_in' | 'clock_out';
+      if (!hasClockedIn) {
+        eventType = 'clock_in';
+      } else if (!hasClockedOut) {
+        eventType = 'clock_out';
+      } else {
+        // Already clocked in and out today -> duplicate scan warning
+        setLastScanResult({
+          success: true,
+          staffName: identifiedStaff.fullName,
+          staffId: identifiedStaff.staffId,
+          department: identifiedStaff.departmentName,
+          type: 'clock_out',
+          timestamp: now.toISOString(),
+          message: 'Shift Complete: Clock-in and clock-out already recorded for today.',
+        });
+        return;
+      }
+
+      // Punctuality Evaluation for Clock-In:
+      // Standard: 9:00 AM. Grace period: 60 minutes (until 10:00 AM).
+      const isLate = currentHour > 10 || (currentHour === 10 && now.getMinutes() > 0);
+      const punctuality = eventType === 'clock_in' ? (isLate ? 'late' : 'on-time') : undefined;
+
+      const clockEvent: ClockEvent = {
+        id: `gate-${Date.now().toString(36)}`,
+        staffId: identifiedStaff.staffId,
+        staffName: identifiedStaff.fullName,
+        staffDepartment: identifiedStaff.departmentName,
+        type: eventType,
+        punctuality,
+        timestamp: now.toISOString(),
+        deviceId: 'dev-gate-01',
+        clockIntegrity: 'verified',
+        syncStatus: 'synced',
+      };
+
+      await api.recordClockEvent(clockEvent);
+
+      useSyncStore.getState().addPendingItem({
+        type: 'clock',
+        description: `${identifiedStaff.fullName} — ${eventType === 'clock_in' ? 'Clock In' : 'Clock Out'}`,
+        timestamp: now.toISOString(),
+      });
+
+      setLastScanResult({
+        success: true,
+        staffName: identifiedStaff.fullName,
+        staffId: identifiedStaff.staffId,
+        department: identifiedStaff.departmentName,
+        type: eventType,
+        punctuality,
+        timestamp: now.toISOString(),
+        message: eventType === 'clock_in'
+          ? `Clock In Recorded • ${punctuality === 'on-time' ? 'On-Time Arrival' : 'Late Arrival'}`
+          : 'Clock Out Recorded • Departure Confirmed',
+      });
+
+      setRecentTerminalScans(prev => [clockEvent, ...prev.slice(0, 9)]);
+    } catch {
       setLastScanResult({
         success: false,
-        staffName: 'Hardware Error',
+        staffName: 'Transmission Error',
         staffId: 'ERR',
         department: 'N/A',
         type: 'clock_in',
         timestamp: new Date().toISOString(),
-        message: 'Scanner transmission error. Please retry verification.',
+        message: 'Scanner communication error. Please present finger again.',
       });
     } finally {
       setIsScanning(false);
     }
-  };
+  }, [isScanning, staffList, recentTerminalScans, scanCounter]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-slate-50/50">
       <Header
-        title="Gate Attendance Kiosk"
-        subtitle="Staff Gate Capturer operational workstation. Turnstile biometric entrance and exit terminal."
+        title="Self-Service Gate Terminal"
+        subtitle="Turnstile biometric attendance station. Present registered fingerprint to record arrival or departure."
         actions={
           <div className="flex items-center gap-2">
-            {isSuperAdmin(user) && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/gate/records')}
-                className="gap-2 text-xs border-primary/30 text-primary hover:bg-primary-50"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Administrative Gate Ledger
-              </Button>
-            )}
             <Button
               variant="outline"
               size="sm"
@@ -168,17 +230,26 @@ export function GateAttendancePage() {
               <RefreshCw className="h-3.5 w-3.5" />
               Sync Station
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/login')}
+              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Admin Portal
+            </Button>
           </div>
         }
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-5xl mx-auto w-full">
-        {/* Workstation Hardware & Telemetry Bar */}
-        <div className="bg-white border border-border rounded-xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        {/* Terminal Station Status Bar */}
+        <div className="bg-white border border-border rounded-xl p-4 shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700">
-                <Fingerprint className="h-5 w-5" />
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-700">
+                <DoorOpen className="h-5 w-5" />
               </div>
               <div>
                 <p className="text-xs text-muted-foreground font-medium">Turnstile Sensor</p>
@@ -192,7 +263,7 @@ export function GateAttendancePage() {
             <div className="h-8 w-px bg-border" />
 
             <div>
-              <p className="text-xs text-muted-foreground font-medium">Workstation Network</p>
+              <p className="text-xs text-muted-foreground font-medium">Station Network</p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <ConnectionIndicator status={connection} />
                 <span className="text-xs font-semibold text-foreground capitalize">{connection}</span>
@@ -210,7 +281,7 @@ export function GateAttendancePage() {
           </div>
 
           <Badge variant="outline" className="bg-slate-100 text-slate-800 border-slate-300 font-mono text-xs">
-            Endpoint: North Main Security Gate
+            Endpoint: Main Campus Gate Terminal 1 (dev-gate-01)
           </Badge>
         </div>
 
@@ -218,11 +289,10 @@ export function GateAttendancePage() {
         <Card className="border-2 border-primary/20 shadow-md overflow-hidden bg-white">
           <CardContent className="p-8 flex flex-col items-center text-center">
             <div className="relative mb-6">
-              <div className={`h-28 w-28 rounded-full flex items-center justify-center transition-all duration-300 ${
-                isScanning
+              <div className={`h-28 w-28 rounded-full flex items-center justify-center transition-all duration-300 ${isScanning
                   ? 'bg-primary-100 text-primary animate-pulse scale-105 shadow-lg'
                   : 'bg-primary-50 text-primary border border-primary/20 hover:scale-105'
-              }`}>
+                }`}>
                 <Fingerprint className="h-16 w-16" />
               </div>
               {isScanning && (
@@ -231,10 +301,10 @@ export function GateAttendancePage() {
             </div>
 
             <h2 className="text-xl font-bold text-foreground">
-              {isScanning ? 'Scanning Fingerprint...' : 'Ready for Staff Verification'}
+              {isScanning ? 'Verifying Fingerprint...' : 'Place Finger on Scanner'}
             </h2>
             <p className="text-sm text-muted-foreground max-w-md mt-1.5">
-              Ask staff member to place their enrolled index or thumb finger firmly onto the turnstile optical reader.
+              Touch your registered finger firmly onto the turnstile optical reader to clock in or clock out.
             </p>
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -245,34 +315,32 @@ export function GateAttendancePage() {
                 className="gap-2.5 bg-primary hover:bg-primary-600 text-white font-semibold px-8 shadow-sm text-sm"
               >
                 <Fingerprint className="h-5 w-5" />
-                {isScanning ? 'Processing Verification...' : 'Trigger Biometric Capture'}
+                {isScanning ? 'Verifying Identity...' : 'Scan Fingerprint to Clock In / Out'}
               </Button>
             </div>
 
             <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5" />
-              <span>Working Hours: <strong>9:00 AM – 5:00 PM</strong> (60m grace period)</span>
+              <span>Standard Hours: <strong>9:00 AM – 5:00 PM</strong> (60m arrival grace period)</span>
             </div>
           </CardContent>
 
           {/* Immediate Live Scan Result Banner */}
           {lastScanResult && (
-            <div className={`border-t p-5 flex items-center justify-between ${
-              lastScanResult.success
+            <div className={`border-t p-5 flex items-center justify-between ${lastScanResult.success
                 ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
                 : 'bg-rose-50/90 border-rose-200 text-rose-900'
-            }`}>
+              }`}>
               <div className="flex items-center gap-3.5">
-                <div className={`p-2 rounded-full ${
-                  lastScanResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                }`}>
+                <div className={`p-2 rounded-full ${lastScanResult.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                  }`}>
                   {lastScanResult.success ? (
                     lastScanResult.type === 'clock_in' ? <LogIn className="h-5 w-5" /> : <LogOut className="h-5 w-5" />
                   ) : (
                     <AlertTriangle className="h-5 w-5" />
                   )}
                 </div>
-                <div>
+                <div className="text-left">
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-base">{lastScanResult.staffName}</h3>
                     <span className="font-mono text-xs opacity-75 font-semibold">[{lastScanResult.staffId}]</span>
@@ -310,7 +378,7 @@ export function GateAttendancePage() {
 
           {recentTerminalScans.length === 0 ? (
             <div className="text-center py-6 border border-dashed border-border rounded-lg text-xs text-muted-foreground">
-              No scans captured on this terminal yet today. Press "Trigger Biometric Capture" above to verify personnel.
+              No scans captured on this terminal yet today. Press "Scan Fingerprint to Clock In / Out" above to record attendance.
             </div>
           ) : (
             <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">

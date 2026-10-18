@@ -14,7 +14,7 @@
 
 export type UserRole = 'super_admin' | 'hod' | 'lecturer' | 'student' | 'staff';
 
-export type CaptureCapability = 'session_capture' | 'gate_capture' | null;
+export type CaptureCapability = 'session_capture' | null;
 
 export interface User {
   id: string;
@@ -26,7 +26,10 @@ export interface User {
   captureCapability?: CaptureCapability;
   studentId?: string; // Linked student record ID
   staffId?: string;   // Linked staff record ID / institutional staff code
+  staffPersonId?: string; // Linked staff person record ID
   matricNumber?: string;
+  isLecturer?: boolean; // Holds teaching responsibility
+  isHOD?: boolean;      // Appointed Head of Department
   avatarUrl?: string;
   lastLogin?: string;
 }
@@ -92,6 +95,18 @@ export interface AcademicEnrollment {
   updatedAt: string;
 }
 
+export interface AcademicSession {
+  id: string;
+  name: string; // e.g. "2026/2027"
+  startDate?: string;
+  endDate?: string;
+  isCurrent: boolean;
+  currentSemester: 1 | 2;
+  status?: 'active' | 'archived' | 'upcoming';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // ─── Staff & Lecturer Specialization ────────────────────────────────────────
 
 export type StaffType = 'academic' | 'non_academic';
@@ -101,9 +116,11 @@ export interface Staff extends Person {
   designation: string; // e.g. "Laboratory Technician", "Senior Lecturer", "Admin Officer"
   staffType?: StaffType;
   isLecturer?: boolean; // Indicates if this staff member also teaches courses
+  isHOD?: boolean; // Indicates if this staff member is appointed Head of Department
+  hodDepartmentId?: string; // Department this staff member heads
+  hodDepartmentName?: string;
   contactEmail?: string;
   contactPhone?: string;
-  captureCapability?: CaptureCapability; // e.g. 'gate_capture' for staff gate capturers
 }
 
 export interface Lecturer extends Person {
@@ -140,6 +157,11 @@ export interface Course {
   isGeneral: boolean; // cross-department GST course
   level: number;
   semester: number;
+  status?: 'active' | 'archived' | 'inactive';
+  primaryLecturerId?: string;
+  primaryLecturerName?: string;
+  substituteLecturerId?: string;
+  substituteLecturerName?: string;
 }
 
 export interface AssignedLecturer {
@@ -175,6 +197,7 @@ export interface CourseEnrollment {
   courseOfferingId: string;
   courseCode: string;
   courseTitle: string;
+  creditUnits?: number;
   type: EnrollmentType;
   enrolledAt: string;
 }
@@ -203,7 +226,11 @@ export interface Session {
   courseCode: string;
   courseTitle: string;
   departmentId?: string;
+  departmentName?: string;
+  academicSession?: string; // e.g. "2026/2027" or "2025/2026"
+  semester?: number; // 1 or 2
   state: SessionState;
+  status?: SessionState; // Alias for state in standard query models
   venue?: string; // Lecture venue entered/selected by the Student Session Capturer
   createdById?: string; // Student Session Capturer ID
   createdByName?: string; // Student Session Capturer Name
@@ -215,6 +242,7 @@ export interface Session {
   closureAuthorizedByLecturerId?: string; // Same lecturer who authorized start must authorize close!
   scheduledStart?: string;
   actualStart?: string;
+  startTime?: string; // Convenience alias for actualStart
   actualEnd?: string;
   maxDurationMinutes?: number; // e.g. 120 minutes timeout
   location?: GeoLocation;
@@ -239,6 +267,9 @@ export interface AttendanceEvent {
   clockIntegrity: ClockIntegrityStatus;
   syncStatus: SyncStatus;
   syncedAt?: string;
+  academicSession?: string;
+  departmentId?: string;
+  courseCode?: string;
 }
 
 // ─── Staff Gate Attendance ──────────────────────────────────────────────────
@@ -340,7 +371,14 @@ export interface Device {
 
 // ─── Operational Policies ───────────────────────────────────────────────────
 
-export type PolicyType = 'attendance_threshold' | 'session_duration' | 'geofence_radius' | 'biometric_enrollment' | 'staff_gate_hours' | 'punctuality_hours';
+export type PolicyType =
+  | 'attendance_threshold'
+  | 'session_duration'
+  | 'geofence_radius'
+  | 'biometric_enrollment'
+  | 'staff_gate_hours'
+  | 'punctuality_hours'
+  | 'geofence_configuration';
 
 export type PolicyScope = 'institution' | 'department' | 'course';
 
@@ -348,6 +386,17 @@ export interface PolicyPunctualityValue {
   expectedStart: string; // "09:00"
   expectedEnd: string;   // "17:00"
   graceMinutes: number;  // 60 minutes
+}
+
+export interface PolicyGeofenceValue {
+  latitude?: number;
+  longitude?: number;
+  radiusMeters: number; // e.g. 200
+  accuracy?: number;
+  capturedAt?: string;
+  capturedBy?: string;
+  campusName?: string;
+  lastCalibratedAt?: string;
 }
 
 export interface Policy {
@@ -358,11 +407,55 @@ export interface Policy {
   scope: PolicyScope;
   scopeId?: string; // department or course ID if scoped
   scopeName?: string;
-  value: number | string | PolicyPunctualityValue;
+  value: number | string | PolicyPunctualityValue | PolicyGeofenceValue;
   effectiveFrom: string;
   version?: string; // e.g. "v1.2"
   createdBy: string;
   isActive: boolean;
+}
+
+// ─── Bulk Progression Types ─────────────────────────────────────────────────
+
+export interface BulkProgressionStudentPreview {
+  studentId: string;
+  studentName: string;
+  matricNumber: string;
+  departmentId: string;
+  departmentName: string;
+  currentLevel: number;
+  currentSession: string;
+  targetLevel: number;
+  targetSession: string;
+  targetSemester: number;
+  eligible: boolean;
+  status: 'eligible' | 'already_progressed' | 'excluded_status' | 'conflict';
+  reason?: string;
+}
+
+export interface BulkProgressionPreview {
+  targetSession: string;
+  targetSemester: number;
+  totalStudents: number;
+  eligibleCount: number;
+  alreadyProgressedCount: number;
+  excludedCount: number;
+  students: BulkProgressionStudentPreview[];
+}
+
+export interface BulkProgressionResult {
+  targetSession: string;
+  targetSemester: number;
+  totalProcessed: number;
+  successfulCount: number;
+  skippedCount: number;
+  failedCount: number;
+  details: {
+    studentId: string;
+    studentName: string;
+    matricNumber: string;
+    status: 'success' | 'skipped' | 'failed';
+    reason?: string;
+  }[];
 }
 
 // ─── Synchronization ────────────────────────────────────────────────────────
@@ -427,38 +520,38 @@ export type ScannerState = 'disconnected' | 'ready' | 'scanning' | 'processing';
 
 export type CaptureResult =
   | {
-      type: 'success';
-      personId: string;
-      personName: string;
-      registrationNumber?: string;
-      qualityScore?: number;
-      minutiaeCount?: number;
-      sensorModel?: string;
-      timestamp: string;
-    }
+    type: 'success';
+    personId: string;
+    personName: string;
+    registrationNumber?: string;
+    qualityScore?: number;
+    minutiaeCount?: number;
+    sensorModel?: string;
+    timestamp: string;
+  }
   | {
-      type: 'duplicate';
-      personId: string;
-      personName: string;
-      originalTimestamp: string;
-      timestamp?: string;
-    }
+    type: 'duplicate';
+    personId: string;
+    personName: string;
+    originalTimestamp: string;
+    timestamp?: string;
+  }
   | {
-      type: 'no_match';
-      qualityScore?: number;
-      minutiaeCount?: number;
-      sensorModel?: string;
-      timestamp: string;
-    }
+    type: 'no_match';
+    qualityScore?: number;
+    minutiaeCount?: number;
+    sensorModel?: string;
+    timestamp: string;
+  }
   | {
-      type: 'geofence_rejected';
-      timestamp: string;
-    }
+    type: 'geofence_rejected';
+    timestamp: string;
+  }
   | {
-      type: 'error';
-      message: string;
-      timestamp?: string;
-    };
+    type: 'error';
+    message: string;
+    timestamp?: string;
+  };
 
 // ─── Navigation Item ────────────────────────────────────────────────────────
 

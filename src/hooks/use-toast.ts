@@ -5,6 +5,7 @@
  * notifications throughout the application. Built on Zustand for simplicity.
  * Supports both object options { title, description, variant } and shorthand methods.
  */
+import React, { useMemo } from 'react';
 import { create } from 'zustand';
 
 export type ToastVariant = 'default' | 'success' | 'destructive' | 'warning';
@@ -73,43 +74,45 @@ export const useToastStore = create<ToastState>((set, get) => ({
 export function useToast() {
   const { addToast, dismissToast, clearAll } = useToastStore();
 
-  const toastFn = (
-    titleOrOptions: string | ToastOptions,
-    description?: string,
-    variant: ToastVariant = 'default',
-    duration = 4000
-  ) => {
-    if (typeof titleOrOptions === 'object') {
-      return addToast({
-        title: titleOrOptions.title,
-        description: titleOrOptions.description,
-        variant: titleOrOptions.variant || 'default',
-        duration: titleOrOptions.duration || 4000,
-      });
-    }
-    return addToast({ title: titleOrOptions, description, variant, duration });
-  };
+  return useMemo(() => {
+    const toastFn = (
+      titleOrOptions: string | ToastOptions,
+      description?: string,
+      variant: ToastVariant = 'default',
+      duration = 4000
+    ) => {
+      if (typeof titleOrOptions === 'object') {
+        return addToast({
+          title: titleOrOptions.title,
+          description: titleOrOptions.description,
+          variant: titleOrOptions.variant || 'default',
+          duration: titleOrOptions.duration || 4000,
+        });
+      }
+      return addToast({ title: titleOrOptions, description, variant, duration });
+    };
 
-  const toast = Object.assign(toastFn, {
-    success: (title: string, description?: string) =>
-      addToast({ title, description, variant: 'success', duration: 3000 }),
-    error: (title: string, description?: string) =>
-      addToast({ title, description, variant: 'destructive', duration: 5000 }),
-    warning: (title: string, description?: string) =>
-      addToast({ title, description, variant: 'warning', duration: 4000 }),
-    info: (title: string, description?: string) =>
-      addToast({ title, description, variant: 'default', duration: 3500 }),
-    dismiss: dismissToast,
-    clearAll,
-  });
+    const toast = Object.assign(toastFn, {
+      success: (title: string, description?: string) =>
+        addToast({ title, description, variant: 'success', duration: 3000 }),
+      error: (title: string, description?: string) =>
+        addToast({ title, description, variant: 'destructive', duration: 5000 }),
+      warning: (title: string, description?: string) =>
+        addToast({ title, description, variant: 'warning', duration: 4000 }),
+      info: (title: string, description?: string) =>
+        addToast({ title, description, variant: 'default', duration: 3500 }),
+      dismiss: dismissToast,
+      clearAll,
+    });
 
-  return {
-    toast,
-    success: toast.success,
-    error: toast.error,
-    warning: toast.warning,
-    info: toast.info,
-    dismiss: dismissToast,
-    clearAll,
-  };
+    return {
+      toast,
+      success: toast.success,
+      error: toast.error,
+      warning: toast.warning,
+      info: toast.info,
+      dismiss: dismissToast,
+      clearAll,
+    };
+  }, [addToast, dismissToast, clearAll]);
 }

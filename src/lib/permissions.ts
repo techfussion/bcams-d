@@ -27,18 +27,14 @@ export const isStaff = (user: User | null): user is User & { role: 'staff' } => 
 };
 
 /**
- * Capability Checks: Capturer is an assignment/capability on Student or Staff identity
+ * Capability Checks: Capturer is an operational capability on Student identity
  */
 export const isSessionCapturer = (user: User | null): user is User & { role: 'student'; captureCapability: 'session_capture' } => {
   return user?.role === 'student' && user?.captureCapability === 'session_capture';
 };
 
-export const isGateCapturer = (user: User | null): user is User & { role: 'staff'; captureCapability: 'gate_capture' } => {
-  return user?.role === 'staff' && user?.captureCapability === 'gate_capture';
-};
-
 export const isAnyCapturer = (user: User | null): user is User => {
-  return isSessionCapturer(user) || isGateCapturer(user);
+  return isSessionCapturer(user);
 };
 
 export const isAdministrator = (user: User | null): user is User => {
@@ -48,10 +44,22 @@ export const isAdministrator = (user: User | null): user is User => {
 // ─── Operational Workflow Permissions ───────────────────────────────────────
 
 /**
- * Staff Registration: Super Admin ONLY.
- * HODs cannot register staff members under the authoritative model.
+ * Staff Registration & Management:
+ * Super Admin institution-wide; HOD within their own department.
  */
-export const canRegisterStaff = (user: User | null): boolean => {
+export const canManageStaff = (user: User | null, departmentId?: string): boolean => {
+  if (isSuperAdmin(user)) return true;
+  if (isHOD(user) && departmentId) return user.departmentId === departmentId;
+  return isHOD(user);
+};
+
+export const canRegisterStaff = canManageStaff;
+
+/**
+ * Assign / Revoke HOD Responsibility:
+ * Super Admin ONLY.
+ */
+export const canAssignHOD = (user: User | null): boolean => {
   return isSuperAdmin(user);
 };
 
@@ -111,10 +119,11 @@ export const canManagePolicies = (user: User | null): boolean => {
 };
 
 /**
- * Gate Attendance Administrative Ledger & Export: Super Admin ONLY.
- * HODs and Capturers have NO access to administrative gate records.
+ * Gate Attendance Administrative Ledger & Export:
+ * Super Admin ONLY.
+ * HODs, Lecturers, and Capturers have NO access to administrative gate records.
  */
-export const canViewGateLedger = (user: User | null): boolean => {
+export const canViewGateLedger = (user: User | null, _departmentId?: string): boolean => {
   return isSuperAdmin(user);
 };
 
@@ -133,14 +142,6 @@ export const canCreateClassSession = (user: User | null): boolean => {
  */
 export const canOperateClassCapture = (user: User | null): boolean => {
   return isSessionCapturer(user);
-};
-
-/**
- * Gate Clock-In / Clock-Out Operation:
- * ONLY Staff Gate Capturers operate the gate terminal workspace.
- */
-export const canOperateGateScanner = (user: User | null): boolean => {
-  return isGateCapturer(user);
 };
 
 /**
@@ -185,6 +186,8 @@ export interface DataScope {
   departmentId?: string;
   courseIds?: string[];
   studentId?: string;
+  staffId?: string;
+  lecturerId?: string;
   isInstitutionWide: boolean;
 }
 
@@ -200,6 +203,8 @@ export const getUserScope = (user: User | null): DataScope => {
   if (isHOD(user)) {
     return {
       departmentId: user.departmentId,
+      staffId: user.staffId,
+      lecturerId: user.isLecturer ? (user.staffId || user.id) : undefined,
       isInstitutionWide: false,
     };
   }
@@ -207,6 +212,8 @@ export const getUserScope = (user: User | null): DataScope => {
   if (isLecturer(user)) {
     return {
       departmentId: user.departmentId,
+      staffId: user.staffId,
+      lecturerId: user.staffId || user.id,
       isInstitutionWide: false,
     };
   }
@@ -221,6 +228,7 @@ export const getUserScope = (user: User | null): DataScope => {
 
   return {
     departmentId: user.departmentId,
+    staffId: user.staffId,
     isInstitutionWide: false,
   };
 };
