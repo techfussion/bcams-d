@@ -16,10 +16,13 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useToast } from '@/hooks';
 import { generateCSV, downloadCSV, printTable, evaluateAttendanceQualification } from '@/domain';
 import { isSuperAdmin, isHOD, isLecturer } from '@/lib/permissions';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { DepartmentalClearanceView } from '@/components/reports/departmental-clearance-view';
 import type { CourseOffering, Department, Student, Session } from '@/types';
 import {
   Download, Printer, CheckCircle2,
   XCircle, Building2, BookOpen, Search, Layers,
+  FileText, Award, ShieldCheck,
 } from 'lucide-react';
 
 export interface StudentEligibilityReport {
@@ -45,6 +48,9 @@ export function ReportsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // View Mode: Course Rosters vs Departmental Clearance Passes (Official A4 & ZIP)
+  const [activeViewTab, setActiveViewTab] = useState<'rosters' | 'departmental_passes'>('rosters');
 
   // Filters
   const [academicSessionFilter, setAcademicSessionFilter] = useState<string>('2026/2027');
@@ -319,7 +325,7 @@ export function ReportsPage() {
           { header: 'Clearance Status', accessor: r => r.status === 'qualified' ? 'QUALIFIED' : 'NOT QUALIFIED' },
         ],
         {
-          institution: 'Bells University of Technology — BCAMS',
+          institution: 'FAMSAS COLLEGE OF HEALTH — BCAMS',
           date: new Date().toLocaleDateString(),
         }
       );
@@ -414,161 +420,204 @@ export function ReportsPage() {
       <Header
         title="Reports & Exam Clearance"
         actions={
-          <div className="flex items-center gap-3">
-            {/* Reusable compact metric for Average Attendance */}
-            <CompactMetric
-              label="Average Attendance"
-              value={`${avgAttendance}%`}
-              subValue={`threshold: ${requiredThreshold}%`}
-            />
+          activeViewTab === 'rosters' ? (
+            <div className="flex items-center gap-3">
+              <CompactMetric
+                label="Average Attendance"
+                value={`${avgAttendance}%`}
+                subValue={`threshold: ${requiredThreshold}%`}
+              />
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleOpenConfigModal('print')}
-              className="gap-2 text-xs"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              Print Roster
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => handleOpenConfigModal('csv')}
-              className="gap-2 bg-primary hover:bg-primary-600 text-white text-xs font-semibold shadow-sm"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Export Clearance CSV
-            </Button>
-          </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleOpenConfigModal('print')}
+                className="gap-2 text-xs"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Print Roster
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleOpenConfigModal('csv')}
+                className="gap-2 bg-primary hover:bg-primary-600 text-white text-xs font-semibold shadow-sm"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export Clearance CSV
+              </Button>
+            </div>
+          ) : undefined
         }
       />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {/* Filter Toolbar */}
-        <div className="bg-white border border-border rounded-lg p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-3 flex-1">
-            <div className="relative min-w-[200px] flex-1 max-w-xs">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search student by name or matric..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 text-xs h-9"
-              />
-            </div>
+        <Tabs value={activeViewTab} onValueChange={(v) => setActiveViewTab(v as any)} className="w-full space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+            <TabsList className="bg-slate-100 p-1">
+              <TabsTrigger
+                value="departmental_passes"
+                className="gap-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm"
+              >
+                <Award className="h-4 w-4 text-emerald-600" />
+                Departmental Clearance Passes & Bulk ZIP
+              </TabsTrigger>
+              <TabsTrigger
+                value="rosters"
+                className="gap-2 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-sm"
+              >
+                <BookOpen className="h-4 w-4 text-blue-600" />
+                Course Rosters & Attendance Analytics
+              </TabsTrigger>
+            </TabsList>
 
-            {/* Academic Session Filter */}
-            <div className="w-[170px]">
-              <Select value={academicSessionFilter} onValueChange={setAcademicSessionFilter}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Academic Session" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="2026/2027">2026/2027 (Current)</SelectItem>
-                  <SelectItem value="2025/2026">2025/2026 (Historical)</SelectItem>
-                  <SelectItem value="all">All Sessions</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Department Filter (Super Admin ONLY, locked for HOD and Lecturers) */}
-            {isAdmin && (
-              <div className="w-[180px]">
-                <Select value={selectedDept} onValueChange={setSelectedDept}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <Building2 className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                    <SelectValue placeholder="All Departments" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Departments</SelectItem>
-                    {departments.map(d => (
-                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {activeViewTab === 'departmental_passes' && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-300 gap-1 text-[11px] font-semibold">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Statutory 75% Rule Enforced
+                </Badge>
               </div>
             )}
-
-            {/* Semester Filter */}
-            <div className="w-[120px]">
-              <Select value={selectedSemester} onValueChange={setSelectedSemester}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Semester" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Semesters</SelectItem>
-                  <SelectItem value="1">Semester 1</SelectItem>
-                  <SelectItem value="2">Semester 2</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Course Offering Dropdown (Scoped to Lecturer when lecturer is logged in) */}
-            <div className="w-[220px]">
-              <Select value={selectedOffering} onValueChange={setSelectedOffering}>
-                <SelectTrigger className="h-9 text-xs">
-                  <BookOpen className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                  <SelectValue placeholder="Select Course">
-                    {currentOffering ? `${currentOffering.courseCode} — ${currentOffering.courseTitle}` : undefined}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {availableOfferings.map(o => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {o.courseCode} — {o.courseTitle}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Academic Level Filter (Section 14) */}
-            <div className="w-[120px]">
-              <Select value={levelFilter} onValueChange={setLevelFilter}>
-                <SelectTrigger className="h-9 text-xs">
-                  <Layers className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                  <SelectValue placeholder="All Levels" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Levels</SelectItem>
-                  {availableLevels.map(lvl => (
-                    <SelectItem key={lvl} value={String(lvl)}>{lvl}L</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Qualification Status Filter (Section 12: Qualified vs Not Qualified) */}
-            <div className="w-[160px]">
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Clearance Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="qualified">Qualified</SelectItem>
-                  <SelectItem value="not_qualified">Not Qualified</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
-          <div className="text-xs text-muted-foreground font-medium">
-            Displaying <strong className="text-foreground">{filteredReports.length}</strong> clearance records
-          </div>
-        </div>
+          <TabsContent value="departmental_passes" className="m-0 focus-visible:outline-none">
+            <DepartmentalClearanceView
+              students={students}
+              departments={departments}
+              allOfferings={allOfferings}
+              userRole={user?.role}
+              userDepartmentId={user?.departmentId}
+            />
+          </TabsContent>
 
-        {/* Report Table without Row Selection (Section 13) */}
-        <div className="bg-white border border-border rounded-lg shadow-sm">
-          <DataTable
-            columns={columns}
-            data={filteredReports}
-            keyField="studentId"
-            pageSize={25}
-            pageSizeOptions={[10, 25, 50, 100]}
-            emptyMessage="No student records match the specified eligibility filter."
-          />
-        </div>
+          <TabsContent value="rosters" className="space-y-4 m-0 focus-visible:outline-none">
+            {/* Filter Toolbar */}
+            <div className="bg-white border border-border rounded-lg p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+              <div className="flex flex-wrap items-center gap-3 flex-1">
+                <div className="relative min-w-[200px] flex-1 max-w-xs">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search student by name or matric..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-8 text-xs h-9"
+                  />
+                </div>
+
+                {/* Academic Session Filter */}
+                <div className="w-[170px]">
+                  <Select value={academicSessionFilter} onValueChange={setAcademicSessionFilter}>
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Academic Session" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2026/2027">2026/2027 (Current)</SelectItem>
+                      <SelectItem value="2025/2026">2025/2026 (Historical)</SelectItem>
+                      <SelectItem value="all">All Sessions</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Department Filter (Super Admin ONLY, locked for HOD and Lecturers) */}
+                {isAdmin && (
+                  <div className="w-[180px]">
+                    <Select value={selectedDept} onValueChange={setSelectedDept}>
+                      <SelectTrigger className="h-9 text-xs">
+                        <Building2 className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                        <SelectValue placeholder="All Departments" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Departments</SelectItem>
+                        {departments.map(d => (
+                          <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Semester Filter */}
+                <div className="w-[120px]">
+                  <Select value={selectedSemester} onValueChange={setSelectedSemester}>
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Semester" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Semesters</SelectItem>
+                      <SelectItem value="1">Semester 1</SelectItem>
+                      <SelectItem value="2">Semester 2</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Course Offering Dropdown (Scoped to Lecturer when lecturer is logged in) */}
+                <div className="w-[220px]">
+                  <Select value={selectedOffering} onValueChange={setSelectedOffering}>
+                    <SelectTrigger className="h-9 text-xs">
+                      <BookOpen className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                      <SelectValue placeholder="Select Course">
+                        {currentOffering ? `${currentOffering.courseCode} — ${currentOffering.courseTitle}` : undefined}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableOfferings.map(o => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.courseCode} — {o.courseTitle}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Academic Level Filter (Section 14) */}
+                <div className="w-[120px]">
+                  <Select value={levelFilter} onValueChange={setLevelFilter}>
+                    <SelectTrigger className="h-9 text-xs">
+                      <Layers className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                      <SelectValue placeholder="All Levels" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Levels</SelectItem>
+                      {availableLevels.map(lvl => (
+                        <SelectItem key={lvl} value={String(lvl)}>{lvl}L</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Qualification Status Filter (Section 12: Qualified vs Not Qualified) */}
+                <div className="w-[160px]">
+                  <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Clearance Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="qualified">Qualified</SelectItem>
+                      <SelectItem value="not_qualified">Not Qualified</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="text-xs text-muted-foreground font-medium">
+                Displaying <strong className="text-foreground">{filteredReports.length}</strong> clearance records
+              </div>
+            </div>
+
+            {/* Report Table without Row Selection (Section 13) */}
+            <div className="bg-white border border-border rounded-lg shadow-sm">
+              <DataTable
+                columns={columns}
+                data={filteredReports}
+                keyField="studentId"
+                pageSize={25}
+                pageSizeOptions={[10, 25, 50, 100]}
+                emptyMessage="No student records match the specified eligibility filter."
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Configurable Export & Print Modal (Section 15) */}

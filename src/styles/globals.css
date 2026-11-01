@@ -162,3 +162,71 @@
     @apply animate-pulse rounded-md bg-muted;
   }
 }
+
+/* ─── Print Optimization & Official Layouts ─────────────────────────────── */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #root {
+    overflow: visible !important;
+    height: auto !important;
+    width: auto !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Strip UI navigation, actions, controls, modals backdrop */
+  .no-print,
+  aside,
+  nav,
+  header,
+  button,
+  input,
+  select,
+  [data-sidebar],
+  [role="dialog"] > button {
+    display: none !important;
+  }
+
+  /* Make Dialog content full page without background shading or borders */
+  [role="dialog"] {
+    position: static !important;
+    transform: none !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    width: 100% !important;
+    height: auto !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Target printable clearance pass */
+  .printable-clearance-pass {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    page-break-inside: avoid;
+  }
+
+  /* Target lecturer printable attendance log */
+  .lecturer-printable-log {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+}

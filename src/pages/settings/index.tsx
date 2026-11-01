@@ -16,10 +16,11 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useSyncStore } from '@/stores/sync-store';
 import { useToast } from '@/hooks/use-toast';
 import { formatDateTime } from '@/lib/utils';
+import { InstitutionalSignoffPanel } from '@/components/settings/institutional-signoff-panel';
 import {
   User, Wifi, WifiOff, Monitor, Bell, Palette, Info,
   Save, RefreshCw, Fingerprint, Clock, Shield, HardDrive,
-  CheckCircle2, Globe, Volume2, VolumeX, Sun, Moon,
+  CheckCircle2, Globe, Volume2, VolumeX, Sun, Moon, PenTool,
 } from 'lucide-react';
 
 interface ToggleSwitchProps {
@@ -175,6 +176,10 @@ export function SettingsPage() {
         <Tabs defaultValue="general" className="space-y-6">
           <TabsList>
             <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="signoff" className="gap-1.5">
+              <PenTool className="h-3.5 w-3.5" />
+              Sign-Off & Signature
+            </TabsTrigger>
             <TabsTrigger value="scanner">Scanner</TabsTrigger>
             <TabsTrigger value="sync">Sync & Network</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
@@ -238,6 +243,11 @@ export function SettingsPage() {
                 description="Show role switcher and debug controls in header"
               />
             </SettingsSection>
+          </TabsContent>
+
+          {/* Institutional Sign-Off & Signature Tab */}
+          <TabsContent value="signoff" className="space-y-6">
+            <InstitutionalSignoffPanel />
           </TabsContent>
 
           {/* Scanner Tab */}

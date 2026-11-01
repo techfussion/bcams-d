@@ -17,10 +17,11 @@ import { useToast } from '@/hooks';
 import { canRegisterLecturer } from '@/lib/permissions';
 import { generateCSV, downloadCSV } from '@/domain';
 import { BulkImportDialog } from '@/components/common/bulk-import-dialog';
+import { LecturerAttendanceLogDialog } from '@/components/people/lecturer-attendance-log-dialog';
 import type { Lecturer, Staff, Department, Course, LecturerAssignment } from '@/types';
 import {
   Plus, BookOpen, Link2, Search, Building2,
-  Download, Edit2, Upload,
+  Download, Edit2, Upload, FileText,
 } from 'lucide-react';
 
 const SAMPLE_LECTURER_CSV = "staffId,fullName,designation,departmentCode,contactEmail,contactPhone\n" +
@@ -60,6 +61,15 @@ export function LecturersPage() {
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Lecturer Attendance Log Modal State
+  const [selectedLecturerForLog, setSelectedLecturerForLog] = useState<Lecturer | null>(null);
+  const [isAttendanceLogOpen, setIsAttendanceLogOpen] = useState(false);
+
+  const handleOpenAttendanceLog = (l: Lecturer) => {
+    setSelectedLecturerForLog(l);
+    setIsAttendanceLogOpen(true);
+  };
 
   // Assign Course State (Section 23 & 24)
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -373,7 +383,23 @@ export function LecturersPage() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => handleOpenEdit(l)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenAttendanceLog(l);
+            }}
+            className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+            title="View Attendance Log & Report"
+          >
+            <FileText className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenEdit(l);
+            }}
             className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-slate-100"
             title="Edit Lecturer Profile"
           >
@@ -383,7 +409,10 @@ export function LecturersPage() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => handleOpenAssign(l)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenAssign(l);
+            }}
             className="h-7 w-7 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
             title="Assign Course (Primary or Substitute)"
           >
@@ -487,6 +516,7 @@ export function LecturersPage() {
             keyField="id"
             pageSize={25}
             emptyMessage="No lecturers match the current filter selection."
+            onRowClick={(l) => handleOpenAttendanceLog(l)}
           />
         </div>
       </div>
@@ -816,6 +846,13 @@ export function LecturersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Lecturer Attendance Report & Session Log Dialog */}
+      <LecturerAttendanceLogDialog
+        lecturer={selectedLecturerForLog}
+        open={isAttendanceLogOpen}
+        onOpenChange={setIsAttendanceLogOpen}
+      />
     </div>
   );
 }
